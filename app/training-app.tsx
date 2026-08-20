@@ -494,7 +494,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
 
       <header className="topbar">
         <button className="brand" type="button" onClick={() => setTab("today")} aria-label="Gå till startsidan">
-          <span className="brand-mark"><Dumbbell size={18} strokeWidth={2.4} /></span>
+          <span className="brand-mark"><Image src="/icon.svg" alt="" width={38} height={38} unoptimized /></span>
           <span><strong>JOXO</strong><small>TRAINING</small></span>
         </button>
         <div className={`save-state ${saveStatus}`}>
@@ -783,7 +783,7 @@ function PlanView({ program, openDay, setOpenDay, nextPassId, onStart }: { progr
                     <a key={exercise.id} className="plan-exercise" href={exercise.notionUrl} target="_blank" rel="noreferrer">
                       <span>{String(exercise.order).padStart(2, "0")}</span>
                       <span className="plan-exercise-thumb" aria-hidden="true">
-                        <Image src={exercise.imageStart} alt="" width={96} height={96} sizes="52px" />
+                        <Image src={exercise.imageStart} alt="" width={96} height={96} sizes="52px" unoptimized />
                       </span>
                       <div className="plan-exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.sets} × {exercise.minReps}–{exercise.maxReps}</small></div>
                       <div className="target-weight">{exercise.weight ? `${exercise.weight} kg` : "Startvikt"}</div>
@@ -863,11 +863,11 @@ function ExerciseCard({ exercise, sets, onUpdate, onToggle }: { exercise: Exerci
       >
         <span className="exercise-motion" aria-hidden="true">
           <span className="exercise-frame">
-            <Image src={exercise.imageStart} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" />
+            <Image src={exercise.imageStart} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" unoptimized />
             <span>START</span>
           </span>
           <span className="exercise-frame">
-            <Image src={exercise.imageEnd} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" />
+            <Image src={exercise.imageEnd} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" unoptimized />
             <span>SLUT</span>
           </span>
         </span>
