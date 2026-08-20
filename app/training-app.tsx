@@ -195,7 +195,7 @@ function totalNutrition(entries: FoodEntry[]) {
   );
 }
 
-export default function TrainingApp() {
+export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLabel: string; greeting: string; nowIso: string }) {
   const [tab, setTab] = useState<TabId>("today");
   const [state, setState] = useState<PersistedState>(initialState);
   const [program, setProgram] = useState<WorkoutDay[]>(PROGRAM);
@@ -508,6 +508,9 @@ export default function TrainingApp() {
           <TodayView
             state={state}
             nextPass={nextPass}
+            todayLabel={todayLabel}
+            greeting={greeting}
+            nowIso={nowIso}
             nutritionTotals={nutritionTotals}
             onStart={() => startWorkout(nextPass)}
             onReadiness={(key, value) => setState((current) => ({
@@ -620,6 +623,9 @@ function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: st
 function TodayView({
   state,
   nextPass,
+  todayLabel,
+  greeting,
+  nowIso,
   nutritionTotals,
   onStart,
   onReadiness,
@@ -629,6 +635,9 @@ function TodayView({
 }: {
   state: PersistedState;
   nextPass: WorkoutDay;
+  todayLabel: string;
+  greeting: string;
+  nowIso: string;
   nutritionTotals: { calories: number; protein: number };
   onStart: () => void;
   onReadiness: (key: "energy" | "soreness" | "motivation", value: number) => void;
@@ -636,7 +645,7 @@ function TodayView({
   onCoach: (question: string) => void;
   onPlan: () => void;
 }) {
-  const [todayStamp] = useState(() => Date.now());
+  const todayStamp = Date.parse(nowIso);
   const completedThisWeek = state.history.filter((entry) => todayStamp - new Date(entry.date).getTime() < 7 * 86400000).length;
   const readinessScore = Math.round(
     Math.min(100, (state.readiness.sleep / 8) * 35 + (state.readiness.energy / 5) * 25 + ((6 - state.readiness.soreness) / 5) * 20 + (state.readiness.motivation / 5) * 20),
@@ -648,8 +657,8 @@ function TodayView({
     <>
       <section className="greeting-row">
         <div>
-          <span className="eyebrow">TORSDAG · 20 AUGUSTI</span>
-          <h1>Hej, {state.profile.name}</h1>
+          <span className="eyebrow">{todayLabel}</span>
+          <h1>{greeting}, {state.profile.name}</h1>
           <p>Nästa pass väntar. Du behöver bara dyka upp.</p>
         </div>
         <div className="readiness-orb" style={{ "--score": `${readinessScore * 3.6}deg` } as React.CSSProperties}>

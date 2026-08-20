@@ -1033,6 +1033,8 @@ select:focus-visible {
 }
 
 .exercise-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 480px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 24px;
