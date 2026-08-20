@@ -1,0 +1,7 @@
+// Safari 26 can use data URLs for web-app icons. Keeping the icon in the
+// document avoids a second unauthenticated request when this private Site is
+// installed from an iPhone Safari View Controller.
+export const APP_ICON_DATA_URL =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzA4MGEwOSIvPgogIDxwYXRoIGQ9Ik0xMjYgMTgydjE0OE0zODYgMTgydjE0OE05MiAyMTh2NzZNNDIwIDIxOHY3Nk0xMjYgMjU2aDI2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzdmZjMyIiBzdHJva2Utd2lkdGg9IjM4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMjE0IDE5NGw0MiAxMjQgNDItMTI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmNWY3ZjUiIHN0cm9rZS13aWR0aD0iMjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4K";
+
+export const APP_INSTALL_VERSION = "joxo-v8";

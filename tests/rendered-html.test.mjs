@@ -163,9 +163,18 @@ test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   }
 
   const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
-  const manifest = await readFile(new URL("../app/manifest.ts", import.meta.url), "utf8");
-  assert.match(layout, /\/favicon\.ico\?v=20260821/);
-  assert.match(layout, /joxo-app-icon-180-20260821\.png/);
+  const manifest = await readFile(new URL("../app/joxo-v8.webmanifest/route.ts", import.meta.url), "utf8");
+  const iconSource = await readFile(new URL("../app/lib/app-icon.ts", import.meta.url), "utf8");
+  const encodedIcon = iconSource.match(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/)?.[1];
+
+  assert.ok(encodedIcon, "The private iPhone install needs an inline icon");
+  assert.match(Buffer.from(encodedIcon, "base64").toString("utf8"), /stroke="#c7ff32"/);
+  assert.match(layout, /APP_ICON_DATA_URL/);
+  assert.match(layout, /apple-touch-icon-precomposed/);
+  assert.match(layout, /APP_INSTALL_VERSION}\.webmanifest/);
+  assert.match(manifest, /id:\s*`\/\$\{APP_INSTALL_VERSION\}`/);
+  assert.match(manifest, /start_url:\s*`\/\?install=\$\{APP_INSTALL_VERSION\}`/);
+  assert.match(manifest, /APP_ICON_DATA_URL/);
   assert.match(manifest, /joxo-app-icon-192-20260821\.png/);
   assert.match(manifest, /joxo-app-icon-512-20260821\.png/);
 
