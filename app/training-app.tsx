@@ -16,20 +16,20 @@ import {
   Cloud,
   CloudOff,
   Dumbbell,
-  ExternalLink,
   Flame,
   Gauge,
   HeartPulse,
   Home,
-  Link2,
+  Info,
+  Lightbulb,
   LoaderCircle,
   Minus,
   Moon,
   Play,
   Plus,
-  RefreshCw,
   RotateCcw,
   Scale,
+  ShieldAlert,
   Sparkles,
   Target,
   Trophy,
@@ -40,8 +40,8 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EXERCISE_COUNT, PROGRAM, getExerciseAdvice, type Exercise, type WorkoutDay } from "./lib/program";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PROGRAM, getExerciseAdvice, type Exercise, type WorkoutDay } from "./lib/program";
 
 type TabId = "today" | "plan" | "workout" | "progress" | "profile";
 
@@ -100,12 +100,6 @@ type PersistedState = {
     weeklyGoal: number;
   };
   weightHistory: Array<{ date: string; weight: number }>;
-  notion: {
-    configured: boolean;
-    lastSync: string;
-    importedExercises: number;
-    message: string;
-  };
 };
 
 type Summary = {
@@ -132,12 +126,6 @@ const initialState: PersistedState = {
     weeklyGoal: 4,
   },
   weightHistory: [{ date: "2026-08-20", weight: 105 }],
-  notion: {
-    configured: false,
-    lastSync: "2026-08-17T15:15:00.000Z",
-    importedExercises: EXERCISE_COUNT,
-    message: "Ditt aktuella program är importerat",
-  },
 };
 
 const navItems: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
@@ -153,12 +141,12 @@ const STORAGE_KEY = "joxo-training-offline-v1";
 
 function mergeState(saved: Partial<PersistedState>): PersistedState {
   return {
-    ...initialState,
-    ...saved,
+    nextPassId: saved.nextPassId ?? initialState.nextPassId,
+    activePassId: saved.activePassId ?? initialState.activePassId,
+    sessionStartedAt: saved.sessionStartedAt ?? initialState.sessionStartedAt,
     readiness: { ...initialState.readiness, ...saved.readiness },
     nutrition: { ...initialState.nutrition, ...saved.nutrition },
     profile: { ...initialState.profile, ...saved.profile },
-    notion: { ...initialState.notion, ...saved.notion },
     logs: saved.logs ?? {},
     history: saved.history ?? [],
     weightHistory: saved.weightHistory?.length ? saved.weightHistory : initialState.weightHistory,
@@ -173,10 +161,6 @@ function formatClock(seconds: number) {
   const min = Math.floor(seconds / 60);
   const sec = seconds % 60;
   return `${min}:${String(sec).padStart(2, "0")}`;
-}
-
-function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "short" }).format(new Date(value));
 }
 
 function createSets(exercise: Exercise): SetEntry[] {
@@ -199,7 +183,7 @@ function totalNutrition(entries: FoodEntry[]) {
 export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLabel: string; greeting: string; nowIso: string }) {
   const [tab, setTab] = useState<TabId>("today");
   const [state, setState] = useState<PersistedState>(initialState);
-  const [program, setProgram] = useState<WorkoutDay[]>(PROGRAM);
+  const program = PROGRAM;
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"loading" | "saved" | "offline" | "saving">("loading");
   const [openDay, setOpenDay] = useState<string>("lower-a");
@@ -208,7 +192,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
   const [coachResponse, setCoachResponse] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [rest, setRest] = useState<{ remaining: number; total: number } | null>(null);
-  const [notionLoading, setNotionLoading] = useState(false);
+  const [guideExercise, setGuideExercise] = useState<Exercise | null>(null);
   const saveAbort = useRef<AbortController | null>(null);
 
   const nextPass = useMemo(
@@ -276,103 +260,6 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
     }, 700);
     return () => window.clearTimeout(timeout);
   }, [hydrated, state]);
-
-  const syncNotion = useCallback(async (silent = false) => {
-    if (!silent) setNotionLoading(true);
-    try {
-      const response = await fetch("/api/notion", { method: "POST" });
-      const body = (await response.json()) as {
-        syncedAt?: string;
-        importedExercises?: number;
-        exercises?: Array<{
-          id: string;
-          name: string;
-          pass: string;
-          muscle: string;
-          order: number;
-          sets: number;
-          minReps: number;
-          maxReps: number;
-          weight: number | null;
-          startReps: number;
-          technique: string;
-          note: string;
-          nextAdvice: string;
-          notionUrl: string;
-        }>;
-        error?: string;
-        setupRequired?: boolean;
-      };
-
-      if (response.ok && body.exercises) {
-        setProgram((current) =>
-          current.map((day) => ({
-            ...day,
-            exercises: day.exercises.map((exercise) => {
-              const remote = body.exercises?.find(
-                (item) => item.id === exercise.id || (item.name === exercise.name && item.pass.endsWith(day.name)),
-              );
-              return remote
-                ? {
-                    ...exercise,
-                    ...remote,
-                    restSeconds: exercise.restSeconds,
-                    nextAdvice: remote.nextAdvice || exercise.nextAdvice,
-                  }
-                : exercise;
-            }),
-          })),
-        );
-      }
-
-      setState((current) => ({
-        ...current,
-        notion: {
-          configured: response.ok,
-          lastSync: body.syncedAt ?? current.notion.lastSync,
-          importedExercises: body.importedExercises ?? current.notion.importedExercises,
-          message: response.ok
-            ? "Synkad med Notion"
-            : body.setupRequired
-              ? "Programmet är importerat · automatisk synk behöver en Notion-nyckel"
-              : body.error ?? "Synken misslyckades",
-        },
-      }));
-    } catch {
-      if (!silent) {
-        setState((current) => ({
-          ...current,
-          notion: { ...current.notion, message: "Kunde inte nå Notion just nu" },
-        }));
-      }
-    } finally {
-      setNotionLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    let cancelled = false;
-    async function checkNotion() {
-      try {
-        const response = await fetch("/api/notion", { cache: "no-store" });
-        const body = (await response.json()) as { configured?: boolean };
-        if (cancelled) return;
-        setState((current) => ({
-          ...current,
-          notion: { ...current.notion, configured: Boolean(body.configured) },
-        }));
-        const age = Date.now() - new Date(state.notion.lastSync).getTime();
-        if (body.configured && age > 24 * 60 * 60 * 1000) void syncNotion(true);
-      } catch {
-        // Den importerade startkopian fortsätter fungera utan nätkontakt.
-      }
-    }
-    void checkNotion();
-    return () => {
-      cancelled = true;
-    };
-  }, [hydrated, state.notion.lastSync, syncNotion]);
 
   useEffect(() => {
     if (!rest) return;
@@ -531,6 +418,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
             setOpenDay={setOpenDay}
             nextPassId={state.nextPassId}
             onStart={startWorkout}
+            onGuide={setGuideExercise}
           />
         )}
 
@@ -544,19 +432,13 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
             onToggleSet={toggleSet}
             onFinish={finishWorkout}
             onReset={resetWorkout}
+            onGuide={setGuideExercise}
           />
         )}
 
         {tab === "progress" && <ProgressView state={state} program={program} />}
 
-        {tab === "profile" && (
-          <ProfileView
-            state={state}
-            setState={setState}
-            notionLoading={notionLoading}
-            onSync={() => void syncNotion(false)}
-          />
-        )}
+        {tab === "profile" && <ProfileView state={state} setState={setState} />}
       </main>
 
       {rest && (
@@ -605,6 +487,8 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
           onClose={() => setCoachOpen(false)}
         />
       )}
+
+      {guideExercise && <ExerciseGuideSheet exercise={guideExercise} onClose={() => setGuideExercise(null)} />}
 
       {summary && <SummarySheet summary={summary} onClose={() => setSummary(null)} />}
     </div>
@@ -753,10 +637,10 @@ function ProgressRing({ value, label, main, sub }: { value: number; label: strin
   );
 }
 
-function PlanView({ program, openDay, setOpenDay, nextPassId, onStart }: { program: WorkoutDay[]; openDay: string; setOpenDay: (id: string) => void; nextPassId: string; onStart: (day: WorkoutDay) => void }) {
+function PlanView({ program, openDay, setOpenDay, nextPassId, onStart, onGuide }: { program: WorkoutDay[]; openDay: string; setOpenDay: (id: string) => void; nextPassId: string; onStart: (day: WorkoutDay) => void; onGuide: (exercise: Exercise) => void }) {
   return (
     <>
-      <PageIntro eyebrow="NOTION-PROGRAM · 4 PASS" title="Ditt träningsschema" description="Fortsätt bara på nästa pass i ordningen när veckan förändras." />
+      <PageIntro eyebrow="DITT 4-DAGARSPROGRAM" title="Ditt träningsschema" description="Fortsätt bara på nästa pass i ordningen när veckan förändras." />
       <div className="sequence-line">
         {program.map((day, index) => (
           <div key={day.id}>
@@ -780,15 +664,15 @@ function PlanView({ program, openDay, setOpenDay, nextPassId, onStart }: { progr
               {expanded && (
                 <div className="plan-card-body">
                   {day.exercises.map((exercise) => (
-                    <a key={exercise.id} className="plan-exercise" href={exercise.notionUrl} target="_blank" rel="noreferrer">
+                    <button key={exercise.id} className="plan-exercise" type="button" onClick={() => onGuide(exercise)} aria-label={`Visa övningsguide för ${exercise.name}`}>
                       <span>{String(exercise.order).padStart(2, "0")}</span>
                       <span className="plan-exercise-thumb" aria-hidden="true">
                         <Image src={exercise.imageStart} alt="" width={96} height={96} sizes="52px" unoptimized />
                       </span>
                       <div className="plan-exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.sets} × {exercise.minReps}–{exercise.maxReps}</small></div>
                       <div className="target-weight">{exercise.weight ? `${exercise.weight} kg` : "Startvikt"}</div>
-                      <ExternalLink size={14} />
-                    </a>
+                      <Info size={15} />
+                    </button>
                   ))}
                   <button className="primary-action" type="button" onClick={() => onStart(day)}><Play size={18} fill="currentColor" /> Starta {day.name}</button>
                 </div>
@@ -797,12 +681,11 @@ function PlanView({ program, openDay, setOpenDay, nextPassId, onStart }: { progr
           );
         })}
       </section>
-      <div className="notion-footnote"><Link2 size={16} /><span>27 övningar importerade från din aktuella träningslogg i Notion.</span></div>
     </>
   );
 }
 
-function WorkoutView({ activePass, nextPass, logs, onStart, onUpdateSet, onToggleSet, onFinish, onReset }: { activePass: WorkoutDay | null; nextPass: WorkoutDay; logs: Record<string, SetEntry[]>; onStart: (day: WorkoutDay) => void; onUpdateSet: (exerciseId: string, index: number, patch: Partial<SetEntry>) => void; onToggleSet: (exercise: Exercise, index: number) => void; onFinish: () => void; onReset: () => void }) {
+function WorkoutView({ activePass, nextPass, logs, onStart, onUpdateSet, onToggleSet, onFinish, onReset, onGuide }: { activePass: WorkoutDay | null; nextPass: WorkoutDay; logs: Record<string, SetEntry[]>; onStart: (day: WorkoutDay) => void; onUpdateSet: (exerciseId: string, index: number, patch: Partial<SetEntry>) => void; onToggleSet: (exercise: Exercise, index: number) => void; onFinish: () => void; onReset: () => void; onGuide: (exercise: Exercise) => void }) {
   if (!activePass) {
     return (
       <div className="empty-workout">
@@ -835,6 +718,7 @@ function WorkoutView({ activePass, nextPass, logs, onStart, onUpdateSet, onToggl
             sets={logs[exercise.id] ?? createSets(exercise)}
             onUpdate={(index, patch) => onUpdateSet(exercise.id, index, patch)}
             onToggle={(index) => onToggleSet(exercise, index)}
+            onGuide={() => onGuide(exercise)}
           />
         ))}
       </section>
@@ -847,7 +731,7 @@ function WorkoutView({ activePass, nextPass, logs, onStart, onUpdateSet, onToggl
   );
 }
 
-function ExerciseCard({ exercise, sets, onUpdate, onToggle }: { exercise: Exercise; sets: SetEntry[]; onUpdate: (index: number, patch: Partial<SetEntry>) => void; onToggle: (index: number) => void }) {
+function ExerciseCard({ exercise, sets, onUpdate, onToggle, onGuide }: { exercise: Exercise; sets: SetEntry[]; onUpdate: (index: number, patch: Partial<SetEntry>) => void; onToggle: (index: number) => void; onGuide: () => void }) {
   const [expanded, setExpanded] = useState(exercise.order === 1);
   const last = sets[sets.length - 1] ?? { weight: exercise.weight, reps: exercise.startReps, rpe: 8 };
   const advice = getExerciseAdvice(exercise, last.reps, last.rpe, last.weight);
@@ -858,8 +742,8 @@ function ExerciseCard({ exercise, sets, onUpdate, onToggle }: { exercise: Exerci
       <button
         className="exercise-visual"
         type="button"
-        onClick={() => setExpanded(!expanded)}
-        aria-label={`${expanded ? "Dölj" : "Visa"} set och teknik för ${exercise.name}`}
+        onClick={onGuide}
+        aria-label={`Öppna övningsguide för ${exercise.name}`}
       >
         <span className="exercise-motion" aria-hidden="true">
           <span className="exercise-frame">
@@ -873,11 +757,14 @@ function ExerciseCard({ exercise, sets, onUpdate, onToggle }: { exercise: Exerci
         </span>
         <span className="visual-number">{String(exercise.order).padStart(2, "0")}</span>
         <span className="muscle-chip">{exercise.muscle}</span>
-        <span className="exercise-status">{complete}/{sets.length} set <ChevronDown size={17} className={expanded ? "rotated" : ""} /></span>
+        <span className="exercise-guide-cue"><Info size={14} /> Visa guide</span>
       </button>
       <div className="exercise-title-row">
         <div><small>{exercise.sets} × {exercise.minReps}–{exercise.maxReps} · vila {Math.round(exercise.restSeconds / 15) * 15} sek</small><h2>{exercise.name}</h2></div>
-        <a href={exercise.notionUrl} target="_blank" rel="noreferrer" aria-label={`Öppna ${exercise.name} i Notion`}><ExternalLink size={17} /></a>
+        <button className="exercise-toggle" type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label={`${expanded ? "Dölj" : "Visa"} set för ${exercise.name}`}>
+          <span>{complete}/{sets.length}</span>
+          <ChevronDown size={17} className={expanded ? "rotated" : ""} />
+        </button>
       </div>
 
       <div className="recommendation-strip"><Sparkles size={16} /><span><small>NÄSTA MÅL</small><strong>{advice}</strong></span></div>
@@ -964,7 +851,7 @@ function MetricCard({ icon: Icon, label, value, note }: { icon: LucideIcon; labe
   return <article className="metric-card"><span><Icon size={19} /></span><small>{label}</small><strong>{value}</strong><p>{note}</p></article>;
 }
 
-function ProfileView({ state, setState, notionLoading, onSync }: { state: PersistedState; setState: React.Dispatch<React.SetStateAction<PersistedState>>; notionLoading: boolean; onSync: () => void }) {
+function ProfileView({ state, setState }: { state: PersistedState; setState: React.Dispatch<React.SetStateAction<PersistedState>> }) {
   const updateProfile = (key: keyof PersistedState["profile"], value: string | number) => setState((current) => ({ ...current, profile: { ...current.profile, [key]: value } }));
   const addWeight = () => setState((current) => ({ ...current, weightHistory: [{ date: new Date().toISOString(), weight: current.profile.weightKg }, ...current.weightHistory].slice(0, 100) }));
 
@@ -989,16 +876,6 @@ function ProfileView({ state, setState, notionLoading, onSync }: { state: Persis
         <button className="secondary-action" type="button" onClick={addWeight}><Scale size={17} /> Spara dagens vikt</button>
       </section>
 
-      <section className="settings-card notion-card">
-        <div className="section-heading"><div><span>DATASYNK</span><h3>Notion</h3></div><span className={`status-dot ${state.notion.configured ? "online" : ""}`} /></div>
-        <div className="notion-status">
-          <span className="notion-logo">N</span>
-          <div><strong>{state.notion.message}</strong><p>{state.notion.importedExercises} övningar · senast {formatShortDate(state.notion.lastSync)}</p></div>
-        </div>
-        <button className="secondary-action" type="button" disabled={notionLoading} onClick={onSync}>{notionLoading ? <LoaderCircle size={17} className="spin" /> : <RefreshCw size={17} />} Synka nu</button>
-        {!state.notion.configured && <div className="setup-note"><CircleAlert size={16} /><span>Din riktiga träningsplan är redan importerad. För automatisk dygnssynk behöver appen senare få en hemlig Notion-nyckel.</span></div>}
-      </section>
-
       <section className="settings-card">
         <div className="section-heading"><div><span>KOSTMÅL</span><h3>Dagliga startmål</h3></div><Utensils size={20} /></div>
         <div className="form-grid two">
@@ -1013,6 +890,67 @@ function ProfileView({ state, setState, notionLoading, onSync }: { state: Persis
 
 function BadgeCheckIcon() {
   return <Check size={13} />;
+}
+
+function ExerciseGuideSheet({ exercise, onClose }: { exercise: Exercise; onClose: () => void }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="sheet-backdrop guide-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="bottom-sheet guide-sheet" role="dialog" aria-modal="true" aria-labelledby={`guide-title-${exercise.id}`}>
+        <div className="sheet-handle" />
+        <div className="sheet-head guide-head">
+          <div><small>ÖVNINGSGUIDE · {exercise.muscle.toUpperCase()}</small><h2 id={`guide-title-${exercise.id}`}>{exercise.name}</h2></div>
+          <button type="button" onClick={onClose} aria-label="Stäng övningsguiden"><X size={20} /></button>
+        </div>
+
+        <div className="guide-media" aria-label={`${exercise.name}, start- och slutläge`}>
+          <span className="guide-frame">
+            <Image src={exercise.imageStart} alt={`${exercise.name}, startläge`} fill sizes="(max-width: 720px) 50vw, 360px" unoptimized />
+            <span>STARTLÄGE</span>
+          </span>
+          <span className="guide-frame">
+            <Image src={exercise.imageEnd} alt={`${exercise.name}, slutläge`} fill sizes="(max-width: 720px) 50vw, 360px" unoptimized />
+            <span>SLUTLÄGE</span>
+          </span>
+        </div>
+
+        <div className="guide-summary"><Info size={18} /><p>{exercise.guide.summary}</p></div>
+
+        <section className="guide-section">
+          <div className="guide-section-head"><span><Target size={18} /></span><div><small>GÖR SÅ HÄR</small><h3>Steg för steg</h3></div></div>
+          <ol>
+            {exercise.guide.steps.map((step, index) => <li key={step}><span>{index + 1}</span><p>{step}</p></li>)}
+          </ol>
+        </section>
+
+        <section className="guide-section guide-tips">
+          <div className="guide-section-head"><span><Lightbulb size={18} /></span><div><small>PT-TIPS</small><h3>Få mer av övningen</h3></div></div>
+          <ul>{exercise.guide.tips.map((tip) => <li key={tip}><Check size={15} /><span>{tip}</span></li>)}</ul>
+        </section>
+
+        <section className="guide-section guide-avoid">
+          <div className="guide-section-head"><span><ShieldAlert size={18} /></span><div><small>VANLIGA MISSTAG</small><h3>Undvik det här</h3></div></div>
+          <ul>{exercise.guide.avoid.map((mistake) => <li key={mistake}><X size={15} /><span>{mistake}</span></li>)}</ul>
+        </section>
+
+        <div className="guide-technique"><Target size={17} /><span><small>SNABBNYCKEL</small>{exercise.technique}</span></div>
+        <p className="guide-safety">Rörelsen ska kännas stabil och kontrollerad. Avbryt vid skarp eller ovanlig smärta och anpassa rörelse, vikt eller övning.</p>
+      </section>
+    </div>
+  );
 }
 
 function RestTimer({ remaining, total, onAdd, onClose }: { remaining: number; total: number; onAdd: () => void; onClose: () => void }) {

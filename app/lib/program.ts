@@ -1,11 +1,13 @@
+import { getExerciseGuide, type ExerciseGuide } from "./exercise-guides";
+
 export type Exercise = {
   id: string;
-  notionUrl: string;
   name: string;
   muscle: string;
   imageStart: string;
   imageEnd: string;
   imageAlt: string;
+  guide: ExerciseGuide;
   order: number;
   sets: number;
   minReps: number;
@@ -27,8 +29,6 @@ export type WorkoutDay = {
   duration: string;
   exercises: Exercise[];
 };
-
-const n = (pageId: string) => `https://app.notion.com/${pageId}`;
 
 const EXERCISE_IMAGE_KEYS: Record<string, string> = {
   "Bänkpress": "bench-press",
@@ -80,10 +80,10 @@ const e = (
   nextAdvice?: string,
 ): Exercise => ({
   id,
-  notionUrl: n(id),
   name,
   muscle,
   ...mediaFor(name),
+  guide: getExerciseGuide(name),
   order,
   sets,
   minReps: reps[0],

@@ -8,6 +8,13 @@
       "when": 1787258980635,
       "tag": "0000_thankful_red_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787263066253,
+      "tag": "0001_shocking_metal_master",
+      "breakpoints": true
     }
   ]
 }

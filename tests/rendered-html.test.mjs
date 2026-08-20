@@ -31,6 +31,30 @@ const exerciseImageKeys = [
   "bulgarian-split-squat",
 ];
 
+const exerciseNames = [
+  "Bänkpress",
+  "Sittande kabelrodd",
+  "Latsdrag",
+  "Shoulder press",
+  "Sidolyft i kabel",
+  "Triceps pushdown",
+  "Biceps curl-maskin",
+  "Hip thrust / glute drive",
+  "Rumänska marklyft (RDL)",
+  "Sittande lårcurl",
+  "Benspark / leg extension",
+  "Vadpress",
+  "Kabelcrunch",
+  "Snedbänk hantelpress",
+  "Pec deck",
+  "Maskinrodd / bröststödd rodd",
+  "Neutralt latsdrag",
+  "Reverse fly / omvänd pec deck",
+  "Triceps extension",
+  "Preacher curl",
+  "Bulgarian split squat",
+];
+
 test("renders Joxo Training metadata", async () => {
   const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
   assert.match(layout, /title:\s*"Joxo Training"/i);
@@ -60,7 +84,7 @@ test("serves exercise images directly without the unavailable image proxy", asyn
   const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
 
   assert.match(config, /unoptimized:\s*true/);
-  assert.equal(trainingApp.match(/\bunoptimized\b/g)?.length, 4);
+  assert.equal(trainingApp.match(/\bunoptimized\b/g)?.length, 6);
 
   const imageHtml = renderToStaticMarkup(
     React.createElement(NextImage, {
@@ -73,6 +97,41 @@ test("serves exercise images directly without the unavailable image proxy", asyn
   );
   assert.match(imageHtml, /src="\/exercises\/hip-thrust-0\.webp"/);
   assert.doesNotMatch(imageHtml, /\/_next\/image/);
+});
+
+test("includes a detailed guide for every unique exercise", async () => {
+  const guides = await readFile(new URL("../app/lib/exercise-guides.ts", import.meta.url), "utf8");
+  const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+
+  for (const name of exerciseNames) {
+    assert.match(guides, new RegExp(`"${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}":\\s*{`), `Missing exercise guide: ${name}`);
+  }
+
+  assert.equal(guides.match(/^    summary:/gm)?.length, exerciseNames.length);
+  assert.match(trainingApp, /function ExerciseGuideSheet/);
+  assert.match(trainingApp, /GÖR SÅ HÄR/);
+  assert.match(trainingApp, /PT-TIPS/);
+  assert.match(trainingApp, /VANLIGA MISSTAG/);
+  assert.match(trainingApp, /onClick={onGuide}/);
+});
+
+test("has no active Notion integration, links, or settings", async () => {
+  const runtimeFiles = [
+    "../app/training-app.tsx",
+    "../app/lib/program.ts",
+    "../app/layout.tsx",
+    "../app/globals.css",
+    "../db/schema.ts",
+    "../README.md",
+  ];
+
+  for (const path of runtimeFiles) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /notion/i, `${path} still contains a Notion reference`);
+  }
+
+  await assert.rejects(stat(new URL("../app/api/notion/route.ts", import.meta.url)));
+  await assert.rejects(stat(new URL("../.env.example", import.meta.url)));
 });
 
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {

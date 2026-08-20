@@ -22,7 +22,7 @@ export const programs = sqliteTable("programs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   owner: text("owner").notNull(),
   name: text("name").notNull(),
-  source: text("source").notNull().default("notion"),
+  source: text("source").notNull().default("local"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   ...timestamps,
 });
@@ -150,17 +150,6 @@ export const coachRecommendations = sqliteTable("coach_recommendations", {
   message: text("message").notNull(),
   rationale: text("rationale").notNull().default(""),
   accepted: integer("accepted", { mode: "boolean" }),
-  ...timestamps,
-});
-
-export const notionSyncSettings = sqliteTable("notion_sync_settings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  owner: text("owner").notNull().unique(),
-  databaseId: text("database_id"),
-  dataSourceId: text("data_source_id"),
-  lastSyncedAt: text("last_synced_at"),
-  mappedExercises: integer("mapped_exercises").notNull().default(0),
-  status: text("status").notNull().default("seeded"),
   ...timestamps,
 });
 

@@ -882,13 +882,19 @@ select:focus-visible {
 
 .plan-exercise {
   display: grid;
+  width: 100%;
   grid-template-columns: 24px 50px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
   padding: 12px 4px;
+  border: 0;
   border-bottom: 1px solid var(--line);
+  background: transparent;
   color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .plan-exercise > span:first-child {
@@ -948,26 +954,11 @@ select:focus-visible {
 }
 
 .plan-exercise > svg {
-  color: var(--muted-2);
+  color: var(--accent);
 }
 
 .plan-card-body .primary-action {
   margin-top: 14px;
-}
-
-.notion-footnote {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 18px 8px 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.notion-footnote svg {
-  flex: 0 0 auto;
-  color: var(--accent);
 }
 
 .empty-workout {
@@ -1175,7 +1166,7 @@ select:focus-visible {
 }
 
 .muscle-chip,
-.exercise-status {
+.exercise-guide-cue {
   position: absolute;
   z-index: 3;
   bottom: 13px;
@@ -1193,16 +1184,14 @@ select:focus-visible {
   color: var(--accent);
 }
 
-.exercise-status {
+.exercise-guide-cue {
   right: 13px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--muted);
-}
-
-.exercise-status svg {
-  transition: transform 160ms ease;
+  border-color: rgba(199, 255, 50, 0.22);
+  background: rgba(13, 17, 11, 0.78);
+  color: #eef8d9;
 }
 
 .exercise-title-row {
@@ -1228,15 +1217,25 @@ select:focus-visible {
   letter-spacing: -0.035em;
 }
 
-.exercise-title-row a {
-  display: grid;
-  width: 34px;
+.exercise-toggle {
+  display: inline-flex;
+  min-width: 62px;
   height: 34px;
   flex: 0 0 auto;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 1px solid var(--line);
   border-radius: 11px;
+  background: var(--surface-2);
   color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.exercise-toggle svg {
+  transition: transform 160ms ease;
 }
 
 .recommendation-strip {
@@ -1782,70 +1781,6 @@ select:focus-visible {
   margin-top: 14px;
 }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #ffbd66;
-  box-shadow: 0 0 0 5px rgba(255, 189, 102, 0.08);
-}
-
-.status-dot.online {
-  background: var(--accent);
-  box-shadow: 0 0 0 5px rgba(199, 255, 50, 0.08);
-}
-
-.notion-status {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 12px;
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  background: rgba(255, 255, 255, 0.022);
-}
-
-.notion-logo {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 11px;
-  background: #f5f5f1;
-  color: #111;
-  font-family: Georgia, serif;
-  font-size: 24px;
-  font-weight: 900;
-}
-
-.notion-status strong {
-  font-size: 12px;
-}
-
-.notion-status p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.setup-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(255, 189, 102, 0.07);
-  color: #c8b38e;
-  font-size: 9px;
-  line-height: 1.5;
-}
-
-.setup-note svg {
-  flex: 0 0 auto;
-}
-
 .fine-print {
   margin: 13px 0 0;
   color: var(--muted-2);
@@ -2062,6 +1997,232 @@ select:focus-visible {
   background: var(--surface-2);
   color: var(--muted);
   cursor: pointer;
+}
+
+.guide-backdrop {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.guide-sheet {
+  width: min(100%, 720px);
+  max-height: min(94dvh, 940px);
+  padding-right: 14px;
+  padding-left: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.guide-head {
+  padding: 0 3px;
+}
+
+.guide-head > div {
+  min-width: 0;
+}
+
+.guide-head h2 {
+  overflow: hidden;
+  max-width: 560px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-media {
+  display: grid;
+  overflow: hidden;
+  height: clamp(220px, 55vw, 350px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: 21px;
+  background: var(--line-strong);
+}
+
+.guide-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  background: #0b0e0b;
+}
+
+.guide-frame::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(to top, rgba(5, 7, 5, 0.78), transparent 45%);
+  content: "";
+  pointer-events: none;
+}
+
+.guide-frame img {
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(0.88) contrast(1.04) brightness(0.9);
+}
+
+.guide-frame > span {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 12px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(7, 10, 7, 0.65);
+  color: white;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  backdrop-filter: blur(8px);
+}
+
+.guide-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 13px;
+  border: 1px solid rgba(199, 255, 50, 0.15);
+  border-radius: 16px;
+  background: rgba(199, 255, 50, 0.055);
+}
+
+.guide-summary svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.guide-summary p {
+  margin: 0;
+  color: #d8ddd4;
+  font-size: 11px;
+  line-height: 1.58;
+}
+
+.guide-section {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.guide-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.guide-section-head > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.guide-section-head small,
+.guide-technique small {
+  display: block;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.13em;
+}
+
+.guide-section-head h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+  letter-spacing: -0.025em;
+}
+
+.guide-section ol,
+.guide-section ul {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 9px;
+  list-style: none;
+}
+
+.guide-section ol li,
+.guide-section ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #d7dcd3;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.guide-section ol li > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(199, 255, 50, 0.18);
+  border-radius: 8px;
+  background: rgba(199, 255, 50, 0.07);
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.guide-section ol p {
+  margin: 2px 0 0;
+}
+
+.guide-section ul svg {
+  margin-top: 1px;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.guide-avoid .guide-section-head > span {
+  background: rgba(255, 139, 113, 0.09);
+  color: #ff9b83;
+}
+
+.guide-avoid .guide-section-head small,
+.guide-avoid ul svg {
+  color: #ff9b83;
+}
+
+.guide-technique {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border-radius: 15px;
+  background: var(--surface-2);
+  color: #d4d9d0;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.guide-technique > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.guide-technique small {
+  margin-bottom: 3px;
+}
+
+.guide-safety {
+  margin: 12px 5px 0;
+  color: var(--muted-2);
+  font-size: 8px;
+  line-height: 1.55;
 }
 
 .nutrition-summary {

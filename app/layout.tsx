@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://joxo-training.joakim-engholm.chatgpt.site"),
   title: "Joxo Training",
-  description: "Jockes personliga träningsapp med Notion-schema, progression, kostlogg och PT-stöd.",
+  description: "Jockes personliga träningsapp med träningsschema, progression, kostlogg och PT-stöd.",
   applicationName: "Joxo Training",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
