@@ -3,6 +3,9 @@ export type Exercise = {
   notionUrl: string;
   name: string;
   muscle: string;
+  imageStart: string;
+  imageEnd: string;
+  imageAlt: string;
   order: number;
   sets: number;
   minReps: number;
@@ -26,6 +29,42 @@ export type WorkoutDay = {
 };
 
 const n = (pageId: string) => `https://app.notion.com/${pageId}`;
+
+const EXERCISE_IMAGE_KEYS: Record<string, string> = {
+  "Bänkpress": "bench-press",
+  "Sittande kabelrodd": "seated-cable-row",
+  "Latsdrag": "lat-pulldown",
+  "Shoulder press": "shoulder-press",
+  "Sidolyft i kabel": "cable-lateral-raise",
+  "Triceps pushdown": "triceps-pushdown",
+  "Biceps curl-maskin": "machine-biceps-curl",
+  "Hip thrust / glute drive": "hip-thrust",
+  "Rumänska marklyft (RDL)": "romanian-deadlift",
+  "Sittande lårcurl": "seated-leg-curl",
+  "Benspark / leg extension": "leg-extension",
+  "Vadpress": "calf-raise",
+  "Kabelcrunch": "cable-crunch",
+  "Snedbänk hantelpress": "incline-dumbbell-press",
+  "Pec deck": "pec-deck",
+  "Maskinrodd / bröststödd rodd": "machine-row",
+  "Neutralt latsdrag": "neutral-lat-pulldown",
+  "Reverse fly / omvänd pec deck": "reverse-pec-deck",
+  "Triceps extension": "triceps-extension",
+  "Preacher curl": "preacher-curl",
+  "Bulgarian split squat": "bulgarian-split-squat",
+};
+
+function mediaFor(name: string) {
+  const imageKey = EXERCISE_IMAGE_KEYS[name];
+  if (!imageKey) throw new Error(`Övningsbild saknas för ${name}`);
+
+  return {
+    imageStart: `/exercises/${imageKey}-0.webp`,
+    imageEnd: `/exercises/${imageKey}-1.webp`,
+    imageAlt: `${name}, start- och slutläge`,
+  };
+}
+
 const e = (
   id: string,
   name: string,
@@ -44,6 +83,7 @@ const e = (
   notionUrl: n(id),
   name,
   muscle,
+  ...mediaFor(name),
   order,
   sets,
   minReps: reps[0],

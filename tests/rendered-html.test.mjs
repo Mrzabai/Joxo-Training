@@ -1,32 +1,51 @@
 import assert from "node:assert/strict";
+import { readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 
+const exerciseImageKeys = [
+  "bench-press",
+  "seated-cable-row",
+  "lat-pulldown",
+  "shoulder-press",
+  "cable-lateral-raise",
+  "triceps-pushdown",
+  "machine-biceps-curl",
+  "hip-thrust",
+  "romanian-deadlift",
+  "seated-leg-curl",
+  "leg-extension",
+  "calf-raise",
+  "cable-crunch",
+  "incline-dumbbell-press",
+  "pec-deck",
+  "machine-row",
+  "neutral-lat-pulldown",
+  "reverse-pec-deck",
+  "triceps-extension",
+  "preacher-curl",
+  "bulgarian-split-squat",
+];
+
 test("renders Joxo Training metadata", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  assert.match(layout, /title:\s*"Joxo Training"/i);
+  assert.match(layout, /<html lang="sv"/i);
+});
 
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
+test("includes start and end images for every unique exercise", async () => {
+  const assetDirectory = new URL("../public/exercises/", import.meta.url);
+  const files = new Set(await readdir(assetDirectory));
+
+  assert.equal(
+    [...files].filter((file) => file.endsWith(".webp")).length,
+    exerciseImageKeys.length * 2,
   );
 
-  assert.equal(response.status, 200);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^text\/html\b/i,
-  );
-  const html = await response.text();
-  assert.match(html, /<title>Joxo Training<\/title>/i);
-  assert.match(html, /lang="sv"/i);
+  for (const key of exerciseImageKeys) {
+    for (const frame of [0, 1]) {
+      const file = `${key}-${frame}.webp`;
+      assert.ok(files.has(file), `Missing exercise image: ${file}`);
+      assert.ok((await stat(new URL(file, assetDirectory))).size > 10_000, `Exercise image is unexpectedly small: ${file}`);
+    }
+  }
 });

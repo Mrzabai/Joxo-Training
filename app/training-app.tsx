@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   Activity,
   Apple,
@@ -781,7 +782,10 @@ function PlanView({ program, openDay, setOpenDay, nextPassId, onStart }: { progr
                   {day.exercises.map((exercise) => (
                     <a key={exercise.id} className="plan-exercise" href={exercise.notionUrl} target="_blank" rel="noreferrer">
                       <span>{String(exercise.order).padStart(2, "0")}</span>
-                      <div><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.sets} × {exercise.minReps}–{exercise.maxReps}</small></div>
+                      <span className="plan-exercise-thumb" aria-hidden="true">
+                        <Image src={exercise.imageStart} alt="" width={96} height={96} sizes="52px" />
+                      </span>
+                      <div className="plan-exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.sets} × {exercise.minReps}–{exercise.maxReps}</small></div>
                       <div className="target-weight">{exercise.weight ? `${exercise.weight} kg` : "Startvikt"}</div>
                       <ExternalLink size={14} />
                     </a>
@@ -851,9 +855,23 @@ function ExerciseCard({ exercise, sets, onUpdate, onToggle }: { exercise: Exerci
 
   return (
     <article className={`exercise-card ${complete === sets.length ? "complete" : ""}`}>
-      <button className="exercise-visual" type="button" onClick={() => setExpanded(!expanded)}>
+      <button
+        className="exercise-visual"
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        aria-label={`${expanded ? "Dölj" : "Visa"} set och teknik för ${exercise.name}`}
+      >
+        <span className="exercise-motion" aria-hidden="true">
+          <span className="exercise-frame">
+            <Image src={exercise.imageStart} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" />
+            <span>START</span>
+          </span>
+          <span className="exercise-frame">
+            <Image src={exercise.imageEnd} alt="" fill sizes="(max-width: 1000px) 50vw, 500px" />
+            <span>SLUT</span>
+          </span>
+        </span>
         <span className="visual-number">{String(exercise.order).padStart(2, "0")}</span>
-        <span className="visual-dumbbell"><Dumbbell size={46} strokeWidth={1.25} /></span>
         <span className="muscle-chip">{exercise.muscle}</span>
         <span className="exercise-status">{complete}/{sets.length} set <ChevronDown size={17} className={expanded ? "rotated" : ""} /></span>
       </button>
