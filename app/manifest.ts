@@ -12,9 +12,9 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "sv-SE",
     orientation: "portrait",
     icons: [
-      { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/joxo-app-icon-192-20260821.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/joxo-app-icon-512-20260821.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/joxo-app-icon-512-20260821.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

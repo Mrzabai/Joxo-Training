@@ -138,8 +138,11 @@ test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   const icons = [
     ["../public/apple-touch-icon.png", 180],
     ["../public/apple-touch-icon-precomposed.png", 180],
+    ["../public/joxo-app-icon-180-20260821.png", 180],
     ["../public/icon-192.png", 192],
+    ["../public/joxo-app-icon-192-20260821.png", 192],
     ["../public/icon-512.png", 512],
+    ["../public/joxo-app-icon-512-20260821.png", 512],
     ["../public/icon-1024.png", 1024],
     ["../app/apple-icon.png", 180],
     ["../app/icon.png", 512],
@@ -151,5 +154,26 @@ test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
     assert.equal(image.readUInt32BE(16), size, `${path} has the wrong width`);
     assert.equal(image.readUInt32BE(20), size, `${path} has the wrong height`);
     assert.equal(image[25], 2, `${path} must be opaque for a clean iPhone icon`);
+  }
+
+  for (const path of ["../public/favicon.ico", "../public/joxo-favicon-20260821.ico"]) {
+    const image = await readFile(new URL(path, import.meta.url));
+    assert.deepEqual([...image.subarray(0, 4)], [0, 0, 1, 0], `${path} is not a valid ICO file`);
+    assert.ok(image.readUInt16LE(4) >= 6, `${path} should contain multiple fallback sizes`);
+  }
+
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const manifest = await readFile(new URL("../app/manifest.ts", import.meta.url), "utf8");
+  assert.match(layout, /\/favicon\.ico\?v=20260821/);
+  assert.match(layout, /joxo-app-icon-180-20260821\.png/);
+  assert.match(manifest, /joxo-app-icon-192-20260821\.png/);
+  assert.match(manifest, /joxo-app-icon-512-20260821\.png/);
+
+  for (const path of [
+    "../dist/client/favicon.ico",
+    "../dist/client/joxo-favicon-20260821.ico",
+    "../dist/client/joxo-app-icon-180-20260821.png",
+  ]) {
+    assert.ok((await stat(new URL(path, import.meta.url))).size > 5_000, `${path} was not included in the production build`);
   }
 });
