@@ -223,6 +223,19 @@ const weekdayLabels = ["M", "T", "O", "T", "F", "L", "S"];
 const STORAGE_KEY = "joxo-training-offline-v1";
 const FOOD_STORAGE_KEY = "joxo-food-log-v2";
 const THEME_STORAGE_KEY = "joxo-theme";
+const OWNER_STORAGE_KEY = "joxo-owner-token-v1";
+const OWNER_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function ensureOwnerToken() {
+  let token = window.localStorage.getItem(OWNER_STORAGE_KEY);
+  if (!token || !OWNER_TOKEN_PATTERN.test(token)) {
+    token = crypto.randomUUID();
+    window.localStorage.setItem(OWNER_STORAGE_KEY, token);
+  }
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `joxo_owner=${encodeURIComponent(token)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+  return token;
+}
 
 function mergeState(saved: Partial<PersistedState>): PersistedState {
   return {
@@ -317,6 +330,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
+      ensureOwnerToken();
       let local: Partial<PersistedState> | null = null;
       let localFood: FoodEntry[] = [];
       try {

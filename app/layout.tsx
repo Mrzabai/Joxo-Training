@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { APP_ICON_DATA_URL, APP_INSTALL_VERSION } from "./lib/app-icon";
 
+const productionUrl = process.env.NEXT_PUBLIC_SITE_URL
+  ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null)
+  ?? "https://joxo-training.joakim-engholm.chatgpt.site";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://joxo-training.joakim-engholm.chatgpt.site"),
+  metadataBase: new URL(productionUrl),
   title: "Joxo Training",
   description: "Jockes personliga träningsapp med träningsschema, progression, kostlogg och PT-stöd.",
   applicationName: "Joxo Training",

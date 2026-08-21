@@ -1,12 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { nutritionEntries } from "../../../../db/schema";
+import { ownerFrom } from "../../../lib/owner";
 
 export const dynamic = "force-dynamic";
-
-function ownerFrom(request: Request) {
-  return request.headers.get("oai-authenticated-user-email") ?? "jocke@local";
-}
 
 function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -32,11 +29,13 @@ function parseDetails(value: string) {
 }
 
 export async function GET(request: Request) {
+  const owner = ownerFrom(request);
+  if (!owner) return Response.json({ entries: [], error: "Enheten kunde inte identifieras." }, { status: 401 });
   try {
     const rows = await getDb()
       .select()
       .from(nutritionEntries)
-      .where(eq(nutritionEntries.owner, ownerFrom(request)))
+      .where(eq(nutritionEntries.owner, owner))
       .orderBy(desc(nutritionEntries.loggedAt))
       .limit(500);
 
@@ -62,6 +61,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const owner = ownerFrom(request);
+  if (!owner) return Response.json({ error: "Enheten kunde inte identifieras." }, { status: 401 });
   try {
     const raw = await request.text();
     if (raw.length > 30_000) return Response.json({ error: "Måltiden innehåller för mycket data." }, { status: 413 });
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
 
     const entry = {
       id,
-      owner: ownerFrom(request),
+      owner,
       loggedAt,
       mealType,
       name,
@@ -116,13 +117,15 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const owner = ownerFrom(request);
+  if (!owner) return Response.json({ error: "Enheten kunde inte identifieras." }, { status: 401 });
   try {
     const id = cleanText(new URL(request.url).searchParams.get("id"), 80);
     if (!id) return Response.json({ error: "Måltids-id saknas." }, { status: 400 });
 
     await getDb()
       .delete(nutritionEntries)
-      .where(and(eq(nutritionEntries.id, id), eq(nutritionEntries.owner, ownerFrom(request))));
+      .where(and(eq(nutritionEntries.id, id), eq(nutritionEntries.owner, owner)));
 
     return Response.json({ deleted: true });
   } catch (error) {

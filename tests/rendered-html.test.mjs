@@ -135,7 +135,13 @@ test("has no active Notion integration, links, or settings", async () => {
   }
 
   await assert.rejects(stat(new URL("../app/api/notion/route.ts", import.meta.url)));
-  await assert.rejects(stat(new URL("../.env.example", import.meta.url)));
+
+  const migrationDirectory = new URL("../drizzle/", import.meta.url);
+  for (const file of await readdir(migrationDirectory)) {
+    if (!file.endsWith(".sql")) continue;
+    const migration = await readFile(new URL(file, migrationDirectory), "utf8");
+    assert.doesNotMatch(migration, /notion/i, `${file} still contains a Notion reference`);
+  }
 });
 
 test("includes durable local food-database logging, recipes, photos, and theme switching", async () => {
@@ -149,7 +155,7 @@ test("includes durable local food-database logging, recipes, photos, and theme s
   const entryRoute = await readFile(new URL("../app/api/nutrition/entries/route.ts", import.meta.url), "utf8");
   const photoRoute = await readFile(new URL("../app/api/nutrition/photo/route.ts", import.meta.url), "utf8");
   const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8");
-  const hosting = JSON.parse(await readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"));
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
   for (const name of [
     "Bellas carnivore chips",
@@ -203,10 +209,14 @@ test("includes durable local food-database logging, recipes, photos, and theme s
   assert.match(nutritionMatcher, /overnight oats/);
   assert.match(nutritionMatcher, /matchSavedRecipe/);
   assert.match(entryRoute, /nutritionEntries/);
-  assert.match(photoRoute, /BUCKET/);
+  assert.match(photoRoute, /nutritionPhotos/);
   assert.match(schema, /"nutrition_entries"/);
-  assert.equal(hosting.d1, "DB");
-  assert.equal(hosting.r2, "BUCKET");
+  assert.match(schema, /pgTable/);
+  assert.match(schema, /"nutrition_photos"/);
+  assert.equal(packageJson.scripts.build, "next build");
+  assert.equal(packageJson.dependencies["@neondatabase/serverless"], "^1.0.2");
+  assert.equal(packageJson.devDependencies.vinext, undefined);
+  assert.equal(packageJson.devDependencies.wrangler, undefined);
 });
 
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
@@ -253,11 +263,8 @@ test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   assert.match(manifest, /joxo-app-icon-192-20260821\.png/);
   assert.match(manifest, /joxo-app-icon-512-20260821\.png/);
 
-  for (const path of [
-    "../dist/client/favicon.ico",
-    "../dist/client/joxo-favicon-20260821.ico",
-    "../dist/client/joxo-app-icon-180-20260821.png",
-  ]) {
-    assert.ok((await stat(new URL(path, import.meta.url))).size > 5_000, `${path} was not included in the production build`);
+  assert.ok((await stat(new URL("../.next/BUILD_ID", import.meta.url))).size > 0, "Next.js production build was not created");
+  for (const path of ["../public/favicon.ico", "../public/joxo-favicon-20260821.ico", "../public/joxo-app-icon-180-20260821.png"]) {
+    assert.ok((await stat(new URL(path, import.meta.url))).size > 5_000, `${path} is missing from public assets`);
   }
 });
