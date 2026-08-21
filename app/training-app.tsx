@@ -103,6 +103,8 @@ type NutritionItem = {
   carbs?: number | null;
   fat?: number | null;
   fiber?: number | null;
+  sourceName?: string;
+  sourceUrl?: string;
 };
 
 type NutritionEstimate = {
@@ -117,8 +119,14 @@ type NutritionEstimate = {
 type FoodCandidate = {
   id: number;
   name: string;
+  brand?: string;
   group: string;
   score: number;
+  popular: boolean;
+  basisUnit: "g" | "ml";
+  sourceName: string;
+  sourceUrl: string;
+  assumptions: string[];
   per100: {
     calories: number;
     protein: number;
@@ -141,6 +149,8 @@ type FoodMatchGroup = {
 };
 
 type NutritionEngine = "manual" | "saved-recipe" | "food-database";
+
+const QUICK_FOODS = ["Vaniljkvarg", "Kycklingfilé", "Havregryn", "Ägg", "KESO", "Wasa Protein+", "ProPud", "Barebells"];
 
 type PersistedState = {
   theme: "dark" | "light";
@@ -1198,6 +1208,8 @@ function NutritionView({
 }) {
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [description, setDescription] = useState("");
+  const [foodAmount, setFoodAmount] = useState("150");
+  const [foodUnit, setFoodUnit] = useState("g");
   const [meal, setMeal] = useState("Mellanmål");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState("");
@@ -1249,7 +1261,11 @@ function NutritionView({
 
   async function analyzeMeal() {
     if (!description.trim()) {
-      setError("Skriv ett livsmedel och gärna mängd i gram. Bilden kan sparas med loggen men analyseras inte.");
+      setError("Skriv ett livsmedel eller en produkt, till exempel vaniljkvarg.");
+      return;
+    }
+    if (!Number.isFinite(Number(foodAmount.replace(",", "."))) || Number(foodAmount.replace(",", ".")) <= 0) {
+      setError("Ange en mängd större än noll.");
       return;
     }
     setError("");
@@ -1258,7 +1274,9 @@ function NutritionView({
     setStatus("analyzing");
     try {
       const form = new FormData();
-      form.append("description", description.trim());
+      form.append("query", description.trim());
+      form.append("amount", foodAmount.replace(",", "."));
+      form.append("unit", foodUnit);
       const response = await fetch("/api/nutrition/analyze", { method: "POST", body: form });
       const body = (await response.json()) as { estimate?: NutritionEstimate; groups?: FoodMatchGroup[]; engine?: NutritionEngine; error?: string };
       if (!response.ok) throw new Error(body.error || "Livsmedlet hittades inte i matdatabasen.");
@@ -1292,7 +1310,8 @@ function NutritionView({
       return;
     }
     const items = chosen.flatMap((candidate) => candidate ? [candidate.item] : []);
-    const assumptions = matchGroups.flatMap((group) => group.assumptions);
+    const assumptions = chosen.flatMap((candidate) => candidate?.assumptions ?? []);
+    const sources = [...new Set(chosen.flatMap((candidate) => candidate?.sourceName ? [candidate.sourceName] : []))];
     setEstimate({
       title: items.length === 1 ? items[0].name : description.trim().slice(0, 160) || "Måltid",
       calories: items.reduce((sum, item) => sum + item.calories, 0),
@@ -1300,8 +1319,8 @@ function NutritionView({
       confidence: matchGroups.some((group) => group.confidence === "low") ? "low" : "medium",
       assumptions: [
         ...assumptions,
-        "Livsmedelsverkets Livsmedelsdatabas version 2026-07-01; ursprungliga värden per 100 g.",
-        "Kontrollera tillagningssätt, produkt och ätbar mängd innan du sparar.",
+        sources.length ? `Näringsvärden från ${sources.join(" samt ")}.` : "Näringsvärden från den lokala matdatabasen.",
+        "Produkter och recept kan ändras; kontrollera förpackningen innan du sparar.",
       ],
       items,
     });
@@ -1393,10 +1412,28 @@ function NutritionView({
         <div className="section-heading"><div><span>LOKAL MATDATABAS</span><h3>Vad åt du?</h3></div><Database size={20} /></div>
         <div className="food-database-status">
           <Database size={17} />
-          <span><strong>2 606 svenska livsmedel</strong><small>Kcal, protein, kolhydrater, fett och fiber · utan externt API</small></span>
-          <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Källa</a>
+          <span><strong>2 641 livsmedel</strong><small>2 606 basvaror + 35 träningsfavoriter · utan externt API</small></span>
+          <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Basdata</a>
         </div>
-        <textarea value={description} onChange={(event) => { setDescription(event.target.value); setEstimate(null); setMatchGroups([]); setEstimateEngine("manual"); }} placeholder={"Exempel: 200 g kyckling bröstfilé stekt\n250 g potatis kokt\n1 msk olivolja"} rows={3} />
+        <label className="food-search-field">
+          <span>Livsmedel eller produkt</span>
+          <input
+            value={description}
+            onChange={(event) => { setDescription(event.target.value); setEstimate(null); setMatchGroups([]); setEstimateEngine("manual"); }}
+            onKeyDown={(event) => { if (event.key === "Enter" && status === "idle") void analyzeMeal(); }}
+            placeholder="Vaniljkvarg, Wasa Protein+ eller kycklingfilé"
+            autoComplete="off"
+          />
+          <small>Stavfel och sammansatta ord går bra. “150g vaniljkvarg” fungerar också.</small>
+        </label>
+        <div className="food-amount-fields">
+          <label><span>Mängd</span><input type="number" inputMode="decimal" min="0.01" step="0.1" value={foodAmount} onChange={(event) => { setFoodAmount(event.target.value); setEstimate(null); setMatchGroups([]); }} /></label>
+          <label><span>Enhet</span><select value={foodUnit} onChange={(event) => { setFoodUnit(event.target.value); setEstimate(null); setMatchGroups([]); }}><option value="g">gram (g)</option><option value="kg">kilogram (kg)</option><option value="dl">deciliter (dl)</option><option value="ml">milliliter (ml)</option><option value="st">styck</option><option value="portion">portion</option><option value="msk">matsked (msk)</option><option value="tsk">tesked (tsk)</option></select></label>
+        </div>
+        <div className="quick-foods" aria-label="Populära livsmedel">
+          <span>Snabbval</span>
+          <div>{QUICK_FOODS.map((food) => <button type="button" key={food} onClick={() => { setDescription(food); setEstimate(null); setMatchGroups([]); setError(""); }}>{food}</button>)}</div>
+        </div>
         <div className="composer-controls">
           <select value={meal} onChange={(event) => setMeal(event.target.value)} aria-label="Måltidstyp"><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select>
           <button type="button" onClick={() => cameraInput.current?.click()}><Camera size={17} /> Kamera</button>
@@ -1426,22 +1463,26 @@ function NutritionView({
 
         {matchGroups.length > 0 && (
           <div className="food-match-panel">
-            <div className="food-match-heading"><span><Database size={17} /><strong>Välj rätt livsmedel</strong></span><small>Värden visas för mängden du skrev.</small></div>
-            {matchGroups.map((group, groupIndex) => (
-              <fieldset className="food-match-group" key={`${group.original}-${groupIndex}`}>
-                <legend><span>{group.original}</span><small>{group.amount}</small></legend>
-                <div>
-                  {group.candidates.map((candidate) => (
-                    <button className={group.selectedId === candidate.id ? "selected" : ""} type="button" key={candidate.id} aria-pressed={group.selectedId === candidate.id} onClick={() => chooseCandidate(groupIndex, candidate.id)}>
-                      <span><strong>{candidate.name}</strong><small>{candidate.group}</small></span>
-                      <span><strong>{candidate.item.calories} kcal</strong><small>{formatNumber(candidate.item.protein)} g protein</small></span>
-                      <span className="food-match-macros"><small>per 100 g</small><b>P {formatNumber(candidate.per100.protein)} · K {candidate.per100.carbs === null ? "–" : formatNumber(candidate.per100.carbs)} · F {candidate.per100.fat === null ? "–" : formatNumber(candidate.per100.fat)}</b></span>
-                      <i>{group.selectedId === candidate.id ? <Check size={14} /> : null}</i>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-            ))}
+            <div className="food-match-heading"><span><Database size={17} /><strong>Bästa träffarna</strong></span><small>Kontrollera variant och mängd.</small></div>
+            {matchGroups.map((group, groupIndex) => {
+              const selectedCandidate = group.candidates.find((candidate) => candidate.id === group.selectedId);
+              return (
+                <fieldset className="food-match-group" key={`${group.original}-${groupIndex}`}>
+                  <legend><span>{group.original}</span><small>{group.amount}</small></legend>
+                  <div>
+                    {group.candidates.map((candidate) => (
+                      <button className={group.selectedId === candidate.id ? "selected" : ""} type="button" key={candidate.id} aria-pressed={group.selectedId === candidate.id} onClick={() => chooseCandidate(groupIndex, candidate.id)}>
+                        <span><strong>{candidate.name}</strong><small>{candidate.brand ? `${candidate.brand} · ` : ""}{candidate.group}{candidate.popular ? " · TRÄNINGSFAVORIT" : ""}</small></span>
+                        <span><strong>{candidate.item.calories} kcal</strong><small>{formatNumber(candidate.item.protein)} g protein · {candidate.item.amount}</small></span>
+                        <span className="food-match-macros"><small>per 100 {candidate.basisUnit}</small><b>P {formatNumber(candidate.per100.protein)} · K {candidate.per100.carbs === null ? "–" : formatNumber(candidate.per100.carbs)} · F {candidate.per100.fat === null ? "–" : formatNumber(candidate.per100.fat)}</b></span>
+                        <i>{group.selectedId === candidate.id ? <Check size={14} /> : null}</i>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedCandidate && <a className="food-match-source" href={selectedCandidate.sourceUrl} target="_blank" rel="noreferrer">Näringskälla: {selectedCandidate.sourceName}</a>}
+                </fieldset>
+              );
+            })}
             <button className="primary-action" type="button" disabled={matchGroups.some((group) => group.selectedId === null)} onClick={useFoodChoices}><Check size={18} /> Använd valda värden</button>
           </div>
         )}
@@ -1456,7 +1497,7 @@ function NutritionView({
             </div>
             {estimate.items.length > 0 && <div className="estimate-items">{estimate.items.map((item, index) => <div key={`${item.name}-${index}`}><span><strong>{item.name}</strong><small>{item.amount}</small>{item.carbs !== undefined && <small>K {item.carbs === null ? "–" : formatNumber(item.carbs)} g · F {item.fat === null ? "–" : formatNumber(item.fat ?? 0)} g · Fiber {item.fiber === null ? "–" : formatNumber(item.fiber ?? 0)} g</small>}</span><span>{item.calories} kcal · {formatNumber(item.protein)} g</span></div>)}</div>}
             {estimate.assumptions.length > 0 && <div className="estimate-assumptions"><Info size={15} /><span><strong>Antaganden</strong>{estimate.assumptions.join(" · ")}</span></div>}
-            <p className="estimate-disclaimer">Databasvärdena är per 100 g. Mängdomräkningar, tillagningssätt och varumärken kan ändra resultatet; kontrollera därför valet före sparning.</p>
+            <p className="estimate-disclaimer">Databasvärdena är per 100 g eller 100 ml. Hushållsmått och produktrecept kan ändra resultatet; kontrollera därför valet och förpackningen före sparning.</p>
             <button className="primary-action" type="button" disabled={status === "saving" || !estimate.title.trim()} onClick={() => void logEstimate()}>{status === "saving" ? <LoaderCircle className="spin" size={18} /> : <Check size={18} />} {status === "saving" ? "Sparar …" : "Bekräfta och logga"}</button>
           </div>
         )}

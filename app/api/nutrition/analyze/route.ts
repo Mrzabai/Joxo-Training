@@ -1,4 +1,4 @@
-import { analyzeFoodDescription, FOOD_DATABASE_META } from "../../../lib/food-database";
+import { analyzeFoodDescription, analyzeFoodSearch, FOOD_DATABASE_META } from "../../../lib/food-database";
 import { matchSavedRecipe } from "../../../lib/nutrition-matcher";
 
 export const dynamic = "force-dynamic";
@@ -6,21 +6,26 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const form = await request.formData();
-    const description = String(form.get("description") ?? "").trim().slice(0, 1_000);
+    const separatedSearch = form.has("query");
+    const description = String(form.get(separatedSearch ? "query" : "description") ?? "").trim().slice(0, 1_000);
+    const amount = String(form.get("amount") ?? "100").trim().slice(0, 20);
+    const unit = String(form.get("unit") ?? "g").trim().slice(0, 20);
     if (!description) {
       return Response.json({
-        error: "Skriv ett livsmedel och gärna mängd i gram, till exempel ‘200 g kycklingfilé’.",
+        error: "Skriv ett livsmedel, till exempel ‘vaniljkvarg’, och välj mängd och enhet.",
       }, { status: 400 });
     }
 
     const savedRecipe = matchSavedRecipe(description);
     if (savedRecipe) return Response.json({ estimate: savedRecipe, engine: "saved-recipe" });
 
-    const result = analyzeFoodDescription(description);
+    const result = separatedSearch
+      ? analyzeFoodSearch(description, amount, unit)
+      : analyzeFoodDescription(description);
     if (result.kind === "not-found") {
       return Response.json({
         code: "food_not_found",
-        error: `Ingen säker träff hittades för “${result.query}”. Prova ett enklare namn och ange gram.`,
+        error: `Ingen säker träff hittades för “${result.query}”. Prova produktnamn, varumärke eller ett enklare ord.`,
         database: FOOD_DATABASE_META,
       }, { status: 404 });
     }
