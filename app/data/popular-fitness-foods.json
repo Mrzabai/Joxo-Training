@@ -566,6 +566,52 @@
       "basisUnit": "g",
       "sourceName": "BOB produktdeklaration",
       "sourceUrl": "https://www.bob.se/produkt/bob-lattsockrad-hallonsylt-390-g/"
+    },
+    {
+      "id": 900036,
+      "name": "Lågkalori Hallonsylt",
+      "brand": "ÖNOS",
+      "group": "Sylt och tillbehör",
+      "aliases": ["lågkalori hallonsylt", "hallonsylt lågkalori", "kalorisnål hallonsylt", "hallonsylt 40 kcal", "önos lågkalori hallonsylt", "önos hallonsylt lågkalori"],
+      "kcal": 40,
+      "protein": 0,
+      "carbs": 7.5,
+      "fat": 0,
+      "fiber": null,
+      "basisUnit": "g",
+      "sourceName": "ÖNOS produktdeklaration",
+      "sourceUrl": "https://www.onos.se/product/hallonsylt-lagkalori/"
+    },
+    {
+      "id": 900037,
+      "name": "Hallonsylt utan tillsatt socker",
+      "brand": "ICA",
+      "group": "Sylt och tillbehör",
+      "aliases": ["ica hallonsylt utan socker", "hallonsylt utan tillsatt socker", "sockerfri hallonsylt", "lågkalori hallonsylt ica", "hallonsylt stevia", "hallonsylt 60 kcal"],
+      "kcal": 60,
+      "protein": 0.5,
+      "carbs": 28,
+      "fat": 0.5,
+      "fiber": null,
+      "basisUnit": "g",
+      "sourceName": "ICA produktdeklaration",
+      "sourceUrl": "https://handla.ica.se/produkt/1446701"
+    },
+    {
+      "id": 900038,
+      "name": "Hallonsylt utan tillsatt socker",
+      "brand": "EASIS",
+      "group": "Sylt och tillbehör",
+      "aliases": ["easis hallonsylt", "easis hallonsylt utan socker", "lågkalori hallonsylt easis", "hallonsylt 32 kcal", "kalorisnål hallonmarmelad", "hallonmarmelad utan tillsatt socker"],
+      "kcal": 32,
+      "protein": 0.5,
+      "carbs": 5.8,
+      "fat": 0.5,
+      "fiber": 2.2,
+      "basisUnit": "g",
+      "portionAmount": 20,
+      "sourceName": "EASIS produktdeklaration",
+      "sourceUrl": "https://easis.se/products/easis-hallonsylt-285-g"
     }
   ]
 }

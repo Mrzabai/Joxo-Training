@@ -164,8 +164,8 @@ test("includes durable local food-database logging, recipes, photos, and theme s
 
   assert.match(trainingApp, /"nutrition", label: "Mat"/);
   assert.match(trainingApp, /Hämta kcal & protein/);
-  assert.match(trainingApp, /2 641 livsmedel/);
-  assert.match(trainingApp, /2 606 basvaror \+ 35 träningsfavoriter/);
+  assert.match(trainingApp, /2 644 livsmedel/);
+  assert.match(trainingApp, /2 606 basvaror \+ 38 träningsfavoriter/);
   assert.match(trainingApp, /Stavfel och sammansatta ord går bra/);
   assert.match(trainingApp, /option value="dl">deciliter/);
   assert.match(trainingApp, /Wasa Protein\+/);
@@ -189,14 +189,17 @@ test("includes durable local food-database logging, recipes, photos, and theme s
   assert.equal(foodDatabase.foods.length, 2606);
   assert.equal(new Set(foodDatabase.foods.map((food) => food.id)).size, 2606);
   assert.ok(foodDatabase.foods.every((food) => typeof food.kcal === "number" && typeof food.protein === "number"));
-  assert.equal(popularFoodDatabase.foods.length, 35);
-  assert.equal(new Set(popularFoodDatabase.foods.map((food) => food.id)).size, 35);
+  assert.equal(popularFoodDatabase.foods.length, 38);
+  assert.equal(new Set(popularFoodDatabase.foods.map((food) => food.id)).size, 38);
   assert.ok(popularFoodDatabase.foods.every((food) => typeof food.sourceUrl === "string" && food.sourceUrl.startsWith("https://")));
   const vanillaQuark = popularFoodDatabase.foods.find((food) => food.aliases.includes("vaniljkvarg"));
   assert.equal(vanillaQuark?.kcal, 59);
   assert.equal(vanillaQuark?.protein, 10);
   assert.equal(vanillaQuark?.portionAmount, 150);
   assert.ok(popularFoodDatabase.foods.some((food) => food.aliases.includes("wasa protein")));
+  const lowCalorieRaspberryJam = popularFoodDatabase.foods.find((food) => food.aliases.includes("lågkalori hallonsylt"));
+  assert.equal(lowCalorieRaspberryJam?.brand, "ÖNOS");
+  assert.equal(lowCalorieRaspberryJam?.kcal, 40);
   assert.match(nutritionMatcher, /overnight oats/);
   assert.match(nutritionMatcher, /matchSavedRecipe/);
   assert.match(entryRoute, /nutritionEntries/);

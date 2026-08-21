@@ -14,6 +14,9 @@ också på varje enskild datapost.
 - Arla Grekisk yoghurt 0,2%: https://www.arla.se/produkter/arla-brand/grekisk-yoghurt-naturell-02-02pct-1000g-589294/
 - Alpro Mandeldryck osötad: https://www.alpro.com/de-de/products/drinks/almond-roasted-unsweetened-1l
 - BOB Lättsockrad Hallonsylt: https://www.bob.se/produkt/bob-lattsockrad-hallonsylt-390-g/
+- ÖNOS Lågkalori Hallonsylt: https://www.onos.se/product/hallonsylt-lagkalori/
+- ICA Hallonsylt utan tillsatt socker: https://handla.ica.se/produkt/1446701
+- EASIS Hallonsylt utan tillsatt socker: https://easis.se/products/easis-hallonsylt-285-g
 
 Näringsvärden anges per 100 gram eller 100 milliliter enligt produktens
 deklaration. `portionAmount` och `gramsPerDl` används endast för transparenta

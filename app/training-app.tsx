@@ -150,7 +150,7 @@ type FoodMatchGroup = {
 
 type NutritionEngine = "manual" | "saved-recipe" | "food-database";
 
-const QUICK_FOODS = ["Vaniljkvarg", "Kycklingfilé", "Havregryn", "Ägg", "KESO", "Wasa Protein+", "ProPud", "Barebells"];
+const QUICK_FOODS = ["Vaniljkvarg", "Lågkalori hallonsylt", "Kycklingfilé", "Havregryn", "Ägg", "KESO", "Wasa Protein+", "ProPud", "Barebells"];
 
 type PersistedState = {
   theme: "dark" | "light";
@@ -1412,7 +1412,7 @@ function NutritionView({
         <div className="section-heading"><div><span>LOKAL MATDATABAS</span><h3>Vad åt du?</h3></div><Database size={20} /></div>
         <div className="food-database-status">
           <Database size={17} />
-          <span><strong>2 641 livsmedel</strong><small>2 606 basvaror + 35 träningsfavoriter · utan externt API</small></span>
+          <span><strong>2 644 livsmedel</strong><small>2 606 basvaror + 38 träningsfavoriter · utan externt API</small></span>
           <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Basdata</a>
         </div>
         <label className="food-search-field">

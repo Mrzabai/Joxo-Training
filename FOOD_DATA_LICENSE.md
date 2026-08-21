@@ -15,7 +15,7 @@ som ett antagande som användaren måste granska.
 
 ## Träningsfavoriter
 
-Filen `app/data/popular-fitness-foods.json` kompletterar basdatabasen med 35
+Filen `app/data/popular-fitness-foods.json` kompletterar basdatabasen med 38
 vanliga produkter inom kvarg, proteinmellanmål, bars, pulver, knäckebröd och
 växtdryck. Värdena är manuellt avlästa från respektive tillverkares offentliga
 näringsdeklaration och kontrollerades 2026-08-21. Varje post innehåller egen
