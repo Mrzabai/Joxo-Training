@@ -142,6 +142,7 @@ test("includes durable AI-assisted food logging, recipes, and theme switching", 
   const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
   const recipes = await readFile(new URL("../app/lib/recipes.ts", import.meta.url), "utf8");
   const analysisRoute = await readFile(new URL("../app/api/nutrition/analyze/route.ts", import.meta.url), "utf8");
+  const nutritionMatcher = await readFile(new URL("../app/lib/nutrition-matcher.ts", import.meta.url), "utf8");
   const entryRoute = await readFile(new URL("../app/api/nutrition/entries/route.ts", import.meta.url), "utf8");
   const photoRoute = await readFile(new URL("../app/api/nutrition/photo/route.ts", import.meta.url), "utf8");
   const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8");
@@ -164,6 +165,9 @@ test("includes durable AI-assisted food logging, recipes, and theme switching", 
   assert.match(trainingApp, /joxo-theme/);
   assert.match(analysisRoute, /model: "gpt-5\.4-mini"/);
   assert.match(analysisRoute, /type: "input_image"/);
+  assert.match(analysisRoute, /insufficient_quota/);
+  assert.match(nutritionMatcher, /overnight oats/);
+  assert.match(nutritionMatcher, /matchSavedRecipe/);
   assert.match(entryRoute, /nutritionEntries/);
   assert.match(photoRoute, /BUCKET/);
   assert.match(schema, /"nutrition_entries"/);

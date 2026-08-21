@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { matchSavedRecipe } from "../../../lib/nutrition-matcher";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +61,6 @@ function normalizeEstimate(value: NutritionEstimate): NutritionEstimate {
 
 export async function POST(request: Request) {
   try {
-    const key = apiKey();
-    if (!key) return Response.json({ error: "AI-analysen är inte konfigurerad ännu." }, { status: 503 });
-
     const form = await request.formData();
     const description = String(form.get("description") ?? "").trim().slice(0, 3_000);
     const imageValue = form.get("image");
@@ -71,6 +69,15 @@ export async function POST(request: Request) {
     if (!description && !image) return Response.json({ error: "Skriv vad du åt eller lägg till en bild." }, { status: 400 });
     if (image && !supportedImages.has(image.type)) return Response.json({ error: "Bilden behöver vara JPEG, PNG eller WebP." }, { status: 415 });
     if (image && image.size > 6_000_000) return Response.json({ error: "Bilden får vara högst 6 MB." }, { status: 413 });
+
+    const savedRecipe = !image ? matchSavedRecipe(description) : null;
+    if (savedRecipe) return Response.json({ estimate: savedRecipe, engine: "saved-recipe" });
+
+    const key = apiKey();
+    if (!key) return Response.json({
+      code: "missing_api_key",
+      error: "AI-analysen är inte konfigurerad. Sparade recept kan fortfarande beräknas automatiskt.",
+    }, { status: 503 });
 
     const userContent: Array<Record<string, unknown>> = [{
       type: "input_text",
@@ -138,10 +145,29 @@ export async function POST(request: Request) {
 
     const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok) {
-      const message = response.status === 429
-        ? "AI-tjänsten är tillfälligt upptagen. Försök igen om en stund."
-        : "Måltiden kunde inte analyseras just nu.";
-      return Response.json({ error: message }, { status: response.status === 429 ? 429 : 502 });
+      const apiError = payload.error && typeof payload.error === "object"
+        ? payload.error as { code?: unknown; type?: unknown }
+        : {};
+      const code = typeof apiError.code === "string" ? apiError.code : "openai_error";
+      const type = typeof apiError.type === "string" ? apiError.type : "unknown";
+      console.warn("Nutrition analysis API request failed", { status: response.status, code, type });
+
+      if (code === "insufficient_quota" || type === "insufficient_quota") {
+        return Response.json({
+          code: "insufficient_quota",
+          error: "AI-krediter saknas. Dina sparade recept fungerar ändå, men fri text och bildanalys kräver aktiverad API-betalning.",
+        }, { status: 402 });
+      }
+      if (response.status === 429 || code === "rate_limit_exceeded") {
+        return Response.json({
+          code: "rate_limit_exceeded",
+          error: "AI-tjänsten är tillfälligt upptagen. Försök igen om en liten stund.",
+        }, { status: 429 });
+      }
+      if (response.status === 401) {
+        return Response.json({ code: "invalid_api_key", error: "AI-nyckeln behöver konfigureras om." }, { status: 503 });
+      }
+      return Response.json({ code, error: "Måltiden kunde inte analyseras just nu." }, { status: 502 });
     }
 
     const output = extractOutputText(payload);
