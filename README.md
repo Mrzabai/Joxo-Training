@@ -11,6 +11,8 @@ En mobil träningsapp för Jocke med ett personligt fyrdagarsschema, aktiv setlo
 - Automatisk vilotimer och passammanfattning
 - Progressionsråd som tar hänsyn till reps, RPE och dagsform
 - Kalori-, protein- och vattenlogg
+- Lokal sökning i 2 606 svenska livsmedel med kcal, protein, kolhydrater, fett och fiber
+- Måltidsbilder som sparas privat tillsammans med loggen
 - Installerbar PWA för mobil
 
 ## Lokal utveckling
@@ -31,6 +33,16 @@ Efter en schemaändring:
 ```bash
 npm run db:generate
 ```
+
+Matloggens sökindex är en inbyggd export från Livsmedelsverkets
+Livsmedelsdatabas och kräver inget API vid användning. För att uppdatera den
+incheckade kopian:
+
+```bash
+npm run fooddb:build
+```
+
+Källhänvisning och licens finns i `FOOD_DATA_LICENSE.md`.
 
 ## Kvalitetskontroller
 

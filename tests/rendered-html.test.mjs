@@ -138,10 +138,12 @@ test("has no active Notion integration, links, or settings", async () => {
   await assert.rejects(stat(new URL("../.env.example", import.meta.url)));
 });
 
-test("includes durable AI-assisted food logging, recipes, and theme switching", async () => {
+test("includes durable local food-database logging, recipes, photos, and theme switching", async () => {
   const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
   const recipes = await readFile(new URL("../app/lib/recipes.ts", import.meta.url), "utf8");
   const analysisRoute = await readFile(new URL("../app/api/nutrition/analyze/route.ts", import.meta.url), "utf8");
+  const foodDatabaseSource = await readFile(new URL("../app/lib/food-database.ts", import.meta.url), "utf8");
+  const foodDatabase = JSON.parse(await readFile(new URL("../app/data/swedish-foods.json", import.meta.url), "utf8"));
   const nutritionMatcher = await readFile(new URL("../app/lib/nutrition-matcher.ts", import.meta.url), "utf8");
   const entryRoute = await readFile(new URL("../app/api/nutrition/entries/route.ts", import.meta.url), "utf8");
   const photoRoute = await readFile(new URL("../app/api/nutrition/photo/route.ts", import.meta.url), "utf8");
@@ -160,12 +162,23 @@ test("includes durable AI-assisted food logging, recipes, and theme switching", 
   }
 
   assert.match(trainingApp, /"nutrition", label: "Mat"/);
-  assert.match(trainingApp, /Beräkna kcal & protein/);
+  assert.match(trainingApp, /Hämta kcal & protein/);
+  assert.match(trainingApp, /2 606 svenska livsmedel/);
+  assert.match(trainingApp, /utan externt API/);
+  assert.match(trainingApp, /Sparas med loggen/);
   assert.match(trainingApp, /GRANSKA UPPSKATTNINGEN/);
   assert.match(trainingApp, /joxo-theme/);
-  assert.match(analysisRoute, /model: "gpt-5\.4-mini"/);
-  assert.match(analysisRoute, /type: "input_image"/);
-  assert.match(analysisRoute, /insufficient_quota/);
+  assert.match(analysisRoute, /analyzeFoodDescription/);
+  assert.match(analysisRoute, /food-database/);
+  assert.doesNotMatch(analysisRoute, /api\.openai\.com|OPENAI_API_KEY|input_image/);
+  assert.match(foodDatabaseSource, /FOOD_DATABASE_META/);
+  assert.match(foodDatabaseSource, /householdWeight/);
+  assert.equal(foodDatabase.source, "Livsmedelsverkets Livsmedelsdatabas");
+  assert.equal(foodDatabase.version, "2026-07-01");
+  assert.equal(foodDatabase.count, 2606);
+  assert.equal(foodDatabase.foods.length, 2606);
+  assert.equal(new Set(foodDatabase.foods.map((food) => food.id)).size, 2606);
+  assert.ok(foodDatabase.foods.every((food) => typeof food.kcal === "number" && typeof food.protein === "number"));
   assert.match(nutritionMatcher, /overnight oats/);
   assert.match(nutritionMatcher, /matchSavedRecipe/);
   assert.match(entryRoute, /nutritionEntries/);

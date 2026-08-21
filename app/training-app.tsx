@@ -18,6 +18,7 @@ import {
   Clock3,
   Cloud,
   CloudOff,
+  Database,
   Dumbbell,
   Flame,
   Gauge,
@@ -33,7 +34,6 @@ import {
   Plus,
   RotateCcw,
   Scale,
-  ScanLine,
   ShieldAlert,
   Sparkles,
   Sun,
@@ -79,18 +79,30 @@ type FoodEntry = {
   calories: number;
   protein: number;
   loggedAt?: string;
-  source?: "manual" | "ai-text" | "ai-image" | "recipe";
+  source?: "manual" | "ai-text" | "ai-image" | "recipe" | "database";
   confidence?: "low" | "medium" | "high" | null;
   description?: string;
   imageKey?: string | null;
   imageType?: string | null;
   details?: {
     assumptions?: string[];
-    items?: Array<{ name: string; amount: string; calories: number; protein: number }>;
+    items?: NutritionItem[];
     recipeId?: string;
     amount?: number;
     unit?: string;
   };
+};
+
+type NutritionItem = {
+  foodId?: number;
+  name: string;
+  amount: string;
+  grams?: number;
+  calories: number;
+  protein: number;
+  carbs?: number | null;
+  fat?: number | null;
+  fiber?: number | null;
 };
 
 type NutritionEstimate = {
@@ -99,8 +111,36 @@ type NutritionEstimate = {
   protein: number;
   confidence: "low" | "medium" | "high";
   assumptions: string[];
-  items: Array<{ name: string; amount: string; calories: number; protein: number }>;
+  items: NutritionItem[];
 };
+
+type FoodCandidate = {
+  id: number;
+  name: string;
+  group: string;
+  score: number;
+  per100: {
+    calories: number;
+    protein: number;
+    carbs: number | null;
+    fat: number | null;
+    fiber: number | null;
+  };
+  item: NutritionItem;
+};
+
+type FoodMatchGroup = {
+  query: string;
+  original: string;
+  amount: string;
+  grams: number;
+  selectedId: number | null;
+  confidence: "low" | "medium" | "high";
+  assumptions: string[];
+  candidates: FoodCandidate[];
+};
+
+type NutritionEngine = "manual" | "saved-recipe" | "food-database";
 
 type PersistedState = {
   theme: "dark" | "light";
@@ -1162,6 +1202,8 @@ function NutritionView({
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const [estimate, setEstimate] = useState<NutritionEstimate | null>(null);
+  const [estimateEngine, setEstimateEngine] = useState<NutritionEngine>("manual");
+  const [matchGroups, setMatchGroups] = useState<FoodMatchGroup[]>([]);
   const [status, setStatus] = useState<"idle" | "preparing" | "analyzing" | "saving">("idle");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -1186,7 +1228,6 @@ function NutritionView({
     if (!file) return;
     setError("");
     setSuccess("");
-    setEstimate(null);
     setStatus("preparing");
     try {
       const blob = await prepareFoodImage(file);
@@ -1207,31 +1248,73 @@ function NutritionView({
   }
 
   async function analyzeMeal() {
-    if (!description.trim() && !imageBlob) {
-      setError("Skriv vad du åt eller lägg till en bild först.");
+    if (!description.trim()) {
+      setError("Skriv ett livsmedel och gärna mängd i gram. Bilden kan sparas med loggen men analyseras inte.");
       return;
     }
     setError("");
     setSuccess("");
+    setMatchGroups([]);
     setStatus("analyzing");
     try {
       const form = new FormData();
       form.append("description", description.trim());
-      if (imageBlob) form.append("image", imageBlob, "meal.jpg");
       const response = await fetch("/api/nutrition/analyze", { method: "POST", body: form });
-      const body = (await response.json()) as { estimate?: NutritionEstimate; error?: string };
-      if (!response.ok || !body.estimate) throw new Error(body.error || "Måltiden kunde inte analyseras.");
+      const body = (await response.json()) as { estimate?: NutritionEstimate; groups?: FoodMatchGroup[]; engine?: NutritionEngine; error?: string };
+      if (!response.ok) throw new Error(body.error || "Livsmedlet hittades inte i matdatabasen.");
+      if (body.groups?.length) {
+        setEstimate(null);
+        setEstimateEngine("food-database");
+        setMatchGroups(body.groups);
+        return;
+      }
+      if (!body.estimate) throw new Error(body.error || "Näringsvärdet kunde inte hämtas.");
       setEstimate(body.estimate);
+      setEstimateEngine(body.engine ?? "food-database");
     } catch (analysisError) {
-      setError(analysisError instanceof Error ? analysisError.message : "Måltiden kunde inte analyseras.");
+      setError(analysisError instanceof Error ? analysisError.message : "Sökningen i matdatabasen misslyckades.");
     } finally {
       setStatus("idle");
     }
   }
 
+  function chooseCandidate(groupIndex: number, candidateId: number) {
+    setMatchGroups((current) => current.map((group, index) => index === groupIndex
+      ? { ...group, selectedId: candidateId, confidence: "medium" }
+      : group));
+    setError("");
+  }
+
+  function useFoodChoices() {
+    const chosen = matchGroups.map((group) => group.candidates.find((candidate) => candidate.id === group.selectedId));
+    if (chosen.some((candidate) => !candidate)) {
+      setError("Välj ett alternativ för varje del av måltiden.");
+      return;
+    }
+    const items = chosen.flatMap((candidate) => candidate ? [candidate.item] : []);
+    const assumptions = matchGroups.flatMap((group) => group.assumptions);
+    setEstimate({
+      title: items.length === 1 ? items[0].name : description.trim().slice(0, 160) || "Måltid",
+      calories: items.reduce((sum, item) => sum + item.calories, 0),
+      protein: Math.round(items.reduce((sum, item) => sum + item.protein, 0) * 10) / 10,
+      confidence: matchGroups.some((group) => group.confidence === "low") ? "low" : "medium",
+      assumptions: [
+        ...assumptions,
+        "Livsmedelsverkets Livsmedelsdatabas version 2026-07-01; ursprungliga värden per 100 g.",
+        "Kontrollera tillagningssätt, produkt och ätbar mängd innan du sparar.",
+      ],
+      items,
+    });
+    setEstimateEngine("food-database");
+    setMatchGroups([]);
+    setError("");
+  }
+
   function startManualEntry() {
     setError("");
     setSuccess("");
+    setMatchGroups([]);
+    setEstimateEngine("manual");
     setEstimate({
       title: description.trim() || "Måltid",
       calories: 0,
@@ -1255,13 +1338,15 @@ function NutritionView({
         calories: Math.max(0, Math.round(estimate.calories)),
         protein: Math.max(0, Math.round(estimate.protein * 10) / 10),
         loggedAt,
-        source: imageBlob ? "ai-image" : description.trim() ? "ai-text" : "manual",
+        source: estimateEngine === "saved-recipe" ? "recipe" : estimateEngine === "food-database" ? "database" : "manual",
         confidence: estimate.confidence,
         description: description.trim(),
         details: { assumptions: estimate.assumptions, items: estimate.items },
       }, imageBlob);
       setDescription("");
       setEstimate(null);
+      setEstimateEngine("manual");
+      setMatchGroups([]);
       clearImage();
       setSuccess("Måltiden är sparad och inräknad i dagens summa.");
     } catch (saveError) {
@@ -1285,7 +1370,7 @@ function NutritionView({
 
   return (
     <>
-      <PageIntro eyebrow="MATLOGG & RECEPT" title="Mat som räknar med dig" description="Beskriv en måltid eller fotografera tallriken. Granska alltid uppskattningen innan du sparar." />
+      <PageIntro eyebrow="MATLOGG & RECEPT" title="Mat som räknar med dig" description="Sök svenska livsmedel, ange mängden och välj rätt variant. Bilder kan sparas med måltiden som dokumentation." />
 
       <section className="nutrition-dashboard card-surface">
         <div className="nutrition-date-row">
@@ -1305,8 +1390,13 @@ function NutritionView({
       </section>
 
       <section className="meal-composer card-surface">
-        <div className="section-heading"><div><span>SNABBLOGGA</span><h3>Vad åt du?</h3></div><ScanLine size={20} /></div>
-        <textarea value={description} onChange={(event) => { setDescription(event.target.value); setEstimate(null); }} placeholder="Exempel: 200 g kyckling, två potatisar och ungefär 1 msk olivolja …" rows={3} />
+        <div className="section-heading"><div><span>LOKAL MATDATABAS</span><h3>Vad åt du?</h3></div><Database size={20} /></div>
+        <div className="food-database-status">
+          <Database size={17} />
+          <span><strong>2 606 svenska livsmedel</strong><small>Kcal, protein, kolhydrater, fett och fiber · utan externt API</small></span>
+          <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Källa</a>
+        </div>
+        <textarea value={description} onChange={(event) => { setDescription(event.target.value); setEstimate(null); setMatchGroups([]); setEstimateEngine("manual"); }} placeholder={"Exempel: 200 g kyckling bröstfilé stekt\n250 g potatis kokt\n1 msk olivolja"} rows={3} />
         <div className="composer-controls">
           <select value={meal} onChange={(event) => setMeal(event.target.value)} aria-label="Måltidstyp"><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select>
           <button type="button" onClick={() => cameraInput.current?.click()}><Camera size={17} /> Kamera</button>
@@ -1318,21 +1408,43 @@ function NutritionView({
         {imagePreview && (
           <div className="food-photo-preview">
             <span className="food-photo-preview-image" role="img" aria-label="Vald måltidsbild" style={{ backgroundImage: `url(${imagePreview})` }} />
-            <span><Camera size={14} /> Redo för analys</span>
+            <span><Camera size={14} /> Sparas med loggen</span>
             <button type="button" onClick={clearImage} aria-label="Ta bort vald bild"><X size={17} /></button>
           </div>
         )}
 
         <div className="composer-actions">
-          <button className="primary-action" type="button" disabled={status !== "idle" || (!description.trim() && !imageBlob)} onClick={() => void analyzeMeal()}>
-            {status === "analyzing" || status === "preparing" ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
-            {status === "preparing" ? "Förbereder bild …" : status === "analyzing" ? "Beräknar …" : "Beräkna kcal & protein"}
+          <button className="primary-action" type="button" disabled={status !== "idle" || !description.trim()} onClick={() => void analyzeMeal()}>
+            {status === "analyzing" || status === "preparing" ? <LoaderCircle className="spin" size={18} /> : <Database size={18} />}
+            {status === "preparing" ? "Förbereder bild …" : status === "analyzing" ? "Söker i databasen …" : "Hämta kcal & protein"}
           </button>
           <button className="manual-link" type="button" disabled={status !== "idle"} onClick={startManualEntry}>Fyll i manuellt</button>
         </div>
 
         {error && <div className="nutrition-notice error"><CircleAlert size={16} />{error}</div>}
         {success && <div className="nutrition-notice success"><Check size={16} />{success}</div>}
+
+        {matchGroups.length > 0 && (
+          <div className="food-match-panel">
+            <div className="food-match-heading"><span><Database size={17} /><strong>Välj rätt livsmedel</strong></span><small>Värden visas för mängden du skrev.</small></div>
+            {matchGroups.map((group, groupIndex) => (
+              <fieldset className="food-match-group" key={`${group.original}-${groupIndex}`}>
+                <legend><span>{group.original}</span><small>{group.amount}</small></legend>
+                <div>
+                  {group.candidates.map((candidate) => (
+                    <button className={group.selectedId === candidate.id ? "selected" : ""} type="button" key={candidate.id} aria-pressed={group.selectedId === candidate.id} onClick={() => chooseCandidate(groupIndex, candidate.id)}>
+                      <span><strong>{candidate.name}</strong><small>{candidate.group}</small></span>
+                      <span><strong>{candidate.item.calories} kcal</strong><small>{formatNumber(candidate.item.protein)} g protein</small></span>
+                      <span className="food-match-macros"><small>per 100 g</small><b>P {formatNumber(candidate.per100.protein)} · K {candidate.per100.carbs === null ? "–" : formatNumber(candidate.per100.carbs)} · F {candidate.per100.fat === null ? "–" : formatNumber(candidate.per100.fat)}</b></span>
+                      <i>{group.selectedId === candidate.id ? <Check size={14} /> : null}</i>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+            <button className="primary-action" type="button" disabled={matchGroups.some((group) => group.selectedId === null)} onClick={useFoodChoices}><Check size={18} /> Använd valda värden</button>
+          </div>
+        )}
 
         {estimate && (
           <div className="estimate-review">
@@ -1342,9 +1454,9 @@ function NutritionView({
               <label><span>Kalorier</span><div><input type="number" inputMode="numeric" min="0" value={estimate.calories} onChange={(event) => setEstimate({ ...estimate, calories: Number(event.target.value) })} /><i>kcal</i></div></label>
               <label><span>Protein</span><div><input type="number" inputMode="decimal" min="0" step="0.1" value={estimate.protein} onChange={(event) => setEstimate({ ...estimate, protein: Number(event.target.value) })} /><i>g</i></div></label>
             </div>
-            {estimate.items.length > 0 && <div className="estimate-items">{estimate.items.map((item, index) => <div key={`${item.name}-${index}`}><span><strong>{item.name}</strong><small>{item.amount}</small></span><span>{item.calories} kcal · {formatNumber(item.protein)} g</span></div>)}</div>}
+            {estimate.items.length > 0 && <div className="estimate-items">{estimate.items.map((item, index) => <div key={`${item.name}-${index}`}><span><strong>{item.name}</strong><small>{item.amount}</small>{item.carbs !== undefined && <small>K {item.carbs === null ? "–" : formatNumber(item.carbs)} g · F {item.fat === null ? "–" : formatNumber(item.fat ?? 0)} g · Fiber {item.fiber === null ? "–" : formatNumber(item.fiber ?? 0)} g</small>}</span><span>{item.calories} kcal · {formatNumber(item.protein)} g</span></div>)}</div>}
             {estimate.assumptions.length > 0 && <div className="estimate-assumptions"><Info size={15} /><span><strong>Antaganden</strong>{estimate.assumptions.join(" · ")}</span></div>}
-            <p className="estimate-disclaimer">Bild- och textanalys är en uppskattning. Portionsstorlek, olja, såser och varumärken kan ändra resultatet mycket.</p>
+            <p className="estimate-disclaimer">Databasvärdena är per 100 g. Mängdomräkningar, tillagningssätt och varumärken kan ändra resultatet; kontrollera därför valet före sparning.</p>
             <button className="primary-action" type="button" disabled={status === "saving" || !estimate.title.trim()} onClick={() => void logEstimate()}>{status === "saving" ? <LoaderCircle className="spin" size={18} /> : <Check size={18} />} {status === "saving" ? "Sparar …" : "Bekräfta och logga"}</button>
           </div>
         )}
@@ -1363,7 +1475,7 @@ function NutritionView({
               {mealEntries.map((entry) => (
                 <article className="meal-entry" key={entry.id}>
                   {entry.imageKey ? <Image className="meal-entry-photo" src={`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`} alt={`Måltidsbild för ${entry.name}`} width={78} height={78} unoptimized /> : <span className="meal-entry-icon">{entry.source === "recipe" ? "🍽️" : <Apple size={20} />}</span>}
-                  <div className="meal-entry-copy"><span><small>{entry.source === "ai-image" ? "BILDANALYS" : entry.source === "ai-text" ? "TEXTANALYS" : entry.source === "recipe" ? "RECEPT" : "MANUELL"}</small>{entry.confidence && <i>{entry.confidence === "high" ? "hög" : entry.confidence === "medium" ? "medel" : "låg"} säkerhet</i>}</span><strong>{entry.name}</strong>{entry.description && <p>{entry.description}</p>}</div>
+                  <div className="meal-entry-copy"><span><small>{entry.source === "database" ? "MATDATABAS" : entry.source === "ai-image" ? "ÄLDRE BILDANALYS" : entry.source === "ai-text" ? "ÄLDRE TEXTANALYS" : entry.source === "recipe" ? "RECEPT" : "MANUELL"}</small>{entry.confidence && <i>{entry.confidence === "high" ? "hög" : entry.confidence === "medium" ? "medel" : "låg"} säkerhet</i>}</span><strong>{entry.name}</strong>{entry.description && <p>{entry.description}</p>}</div>
                   <div className="meal-entry-macros"><strong>{entry.calories} kcal</strong><span>{formatNumber(entry.protein)} g protein</span></div>
                   <button className="meal-delete" type="button" onClick={() => void removeEntry(entry)} aria-label={`Ta bort ${entry.name}`}><Trash2 size={16} /></button>
                 </article>
