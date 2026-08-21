@@ -7,9 +7,12 @@ import {
   ArrowRight,
   BarChart3,
   Brain,
+  BookOpen,
+  Camera,
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -20,6 +23,7 @@ import {
   Gauge,
   HeartPulse,
   Home,
+  ImagePlus,
   Info,
   Lightbulb,
   LoaderCircle,
@@ -29,9 +33,12 @@ import {
   Plus,
   RotateCcw,
   Scale,
+  ScanLine,
   ShieldAlert,
   Sparkles,
+  Sun,
   Target,
+  Trash2,
   Trophy,
   UserRound,
   Utensils,
@@ -42,8 +49,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PROGRAM, getExerciseAdvice, type Exercise, type WorkoutDay } from "./lib/program";
+import { RECIPES, type Recipe } from "./lib/recipes";
 
-type TabId = "today" | "plan" | "workout" | "progress" | "profile";
+type TabId = "today" | "plan" | "workout" | "nutrition" | "progress" | "profile";
 
 type SetEntry = {
   weight: number | null;
@@ -70,9 +78,32 @@ type FoodEntry = {
   meal: string;
   calories: number;
   protein: number;
+  loggedAt?: string;
+  source?: "manual" | "ai-text" | "ai-image" | "recipe";
+  confidence?: "low" | "medium" | "high" | null;
+  description?: string;
+  imageKey?: string | null;
+  imageType?: string | null;
+  details?: {
+    assumptions?: string[];
+    items?: Array<{ name: string; amount: string; calories: number; protein: number }>;
+    recipeId?: string;
+    amount?: number;
+    unit?: string;
+  };
+};
+
+type NutritionEstimate = {
+  title: string;
+  calories: number;
+  protein: number;
+  confidence: "low" | "medium" | "high";
+  assumptions: string[];
+  items: Array<{ name: string; amount: string; calories: number; protein: number }>;
 };
 
 type PersistedState = {
+  theme: "dark" | "light";
   nextPassId: string;
   activePassId: string | null;
   sessionStartedAt: string | null;
@@ -110,6 +141,7 @@ type Summary = {
 };
 
 const initialState: PersistedState = {
+  theme: "dark",
   nextPassId: "lower-a",
   activePassId: null,
   sessionStartedAt: null,
@@ -132,15 +164,19 @@ const navItems: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: "today", label: "Idag", icon: Home },
   { id: "plan", label: "Schema", icon: CalendarDays },
   { id: "workout", label: "Träna", icon: Dumbbell },
+  { id: "nutrition", label: "Mat", icon: Apple },
   { id: "progress", label: "Framsteg", icon: BarChart3 },
   { id: "profile", label: "Profil", icon: UserRound },
 ];
 
 const weekdayLabels = ["M", "T", "O", "T", "F", "L", "S"];
 const STORAGE_KEY = "joxo-training-offline-v1";
+const FOOD_STORAGE_KEY = "joxo-food-log-v2";
+const THEME_STORAGE_KEY = "joxo-theme";
 
 function mergeState(saved: Partial<PersistedState>): PersistedState {
   return {
+    theme: saved.theme === "light" ? "light" : "dark",
     nextPassId: saved.nextPassId ?? initialState.nextPassId,
     activePassId: saved.activePassId ?? initialState.activePassId,
     sessionStartedAt: saved.sessionStartedAt ?? initialState.sessionStartedAt,
@@ -180,14 +216,33 @@ function totalNutrition(entries: FoodEntry[]) {
   );
 }
 
+function stockholmDateKey(value: string | Date) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Stockholm",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(typeof value === "string" ? new Date(value) : value);
+}
+
+function entryDate(entry: FoodEntry, fallback: string) {
+  return entry.loggedAt ? stockholmDateKey(entry.loggedAt) : fallback;
+}
+
+function shiftDate(date: string, days: number) {
+  const value = new Date(`${date}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLabel: string; greeting: string; nowIso: string }) {
   const [tab, setTab] = useState<TabId>("today");
   const [state, setState] = useState<PersistedState>(initialState);
+  const [foodEntries, setFoodEntries] = useState<FoodEntry[]>([]);
   const program = PROGRAM;
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"loading" | "saved" | "offline" | "saving">("loading");
   const [openDay, setOpenDay] = useState<string>("lower-a");
-  const [nutritionOpen, setNutritionOpen] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachResponse, setCoachResponse] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -203,29 +258,57 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
     () => program.find((day) => day.id === state.activePassId) ?? null,
     [program, state.activePassId],
   );
-  const nutritionTotals = useMemo(() => totalNutrition(state.nutrition.entries), [state.nutrition.entries]);
+  const todayKey = useMemo(() => stockholmDateKey(nowIso), [nowIso]);
+  const nutritionTotals = useMemo(
+    () => totalNutrition(foodEntries.filter((entry) => entryDate(entry, todayKey) === todayKey)),
+    [foodEntries, todayKey],
+  );
 
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
       let local: Partial<PersistedState> | null = null;
+      let localFood: FoodEntry[] = [];
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         local = raw ? (JSON.parse(raw) as Partial<PersistedState>) : null;
+        const foodRaw = window.localStorage.getItem(FOOD_STORAGE_KEY);
+        localFood = foodRaw ? (JSON.parse(foodRaw) as FoodEntry[]) : [];
       } catch {
         local = null;
+        localFood = [];
       }
 
       try {
-        const response = await fetch("/api/state", { cache: "no-store" });
-        const body = (await response.json()) as { state?: Partial<PersistedState> | null };
+        const [stateResult, foodResult] = await Promise.allSettled([
+          fetch("/api/state", { cache: "no-store" }),
+          fetch("/api/nutrition/entries", { cache: "no-store" }),
+        ]);
+        const response = stateResult.status === "fulfilled" ? stateResult.value : null;
+        const body = response ? (await response.json()) as { state?: Partial<PersistedState> | null } : { state: null };
+        const merged = mergeState(body.state ?? local ?? {});
+        const legacyFood = (merged.nutrition.entries ?? []).map((entry) => ({
+          ...entry,
+          loggedAt: entry.loggedAt ?? nowIso,
+          source: entry.source ?? "manual" as const,
+        }));
+        let serverFood: FoodEntry[] = [];
+        if (foodResult.status === "fulfilled") {
+          const foodBody = (await foodResult.value.json()) as { entries?: FoodEntry[] };
+          if (foodResult.value.ok && Array.isArray(foodBody.entries)) serverFood = foodBody.entries;
+        }
+        const resolvedFood = serverFood.length ? serverFood : localFood.length ? localFood : legacyFood;
         if (!cancelled) {
-          setState(mergeState(body.state ?? local ?? {}));
-          setSaveStatus(response.ok ? "saved" : "offline");
+          setState({ ...merged, nutrition: { ...merged.nutrition, entries: resolvedFood.slice(0, 500) } });
+          setFoodEntries(resolvedFood);
+          setSaveStatus(response?.ok ? "saved" : "offline");
         }
       } catch {
         if (!cancelled) {
-          setState(mergeState(local ?? {}));
+          const merged = mergeState(local ?? {});
+          const fallbackFood = localFood.length ? localFood : merged.nutrition.entries.map((entry) => ({ ...entry, loggedAt: entry.loggedAt ?? nowIso }));
+          setState({ ...merged, nutrition: { ...merged.nutrition, entries: fallbackFood.slice(0, 500) } });
+          setFoodEntries(fallbackFood);
           setSaveStatus("offline");
         }
       } finally {
@@ -236,7 +319,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [nowIso]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -260,6 +343,57 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
     }, 700);
     return () => window.clearTimeout(timeout);
   }, [hydrated, state]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(FOOD_STORAGE_KEY, JSON.stringify(foodEntries.slice(0, 500)));
+  }, [foodEntries, hydrated]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = state.theme;
+    if (hydrated) window.localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+  }, [hydrated, state.theme]);
+
+  async function saveFoodEntry(draft: FoodEntry, image: Blob | null = null) {
+    let entry = { ...draft };
+    if (image) {
+      const form = new FormData();
+      form.append("image", image, "meal.jpg");
+      const uploadResponse = await fetch("/api/nutrition/photo", { method: "POST", body: form });
+      const upload = (await uploadResponse.json()) as { key?: string; type?: string; error?: string };
+      if (!uploadResponse.ok || !upload.key) throw new Error(upload.error || "Bilden kunde inte sparas.");
+      entry = { ...entry, imageKey: upload.key, imageType: upload.type ?? "image/jpeg" };
+    }
+
+    const response = await fetch("/api/nutrition/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    });
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      if (entry.imageKey) void fetch(`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`, { method: "DELETE" });
+      throw new Error(body.error || "Måltiden kunde inte sparas.");
+    }
+
+    setFoodEntries((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
+    setState((current) => ({
+      ...current,
+      nutrition: { ...current.nutrition, entries: [entry, ...current.nutrition.entries.filter((item) => item.id !== entry.id)].slice(0, 500) },
+    }));
+  }
+
+  async function deleteFoodEntry(entry: FoodEntry) {
+    const response = await fetch(`/api/nutrition/entries?id=${encodeURIComponent(entry.id)}`, { method: "DELETE" });
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) throw new Error(body.error || "Måltiden kunde inte tas bort.");
+    if (entry.imageKey) void fetch(`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`, { method: "DELETE" });
+    setFoodEntries((current) => current.filter((item) => item.id !== entry.id));
+    setState((current) => ({
+      ...current,
+      nutrition: { ...current.nutrition, entries: current.nutrition.entries.filter((item) => item.id !== entry.id) },
+    }));
+  }
 
   useEffect(() => {
     if (!rest) return;
@@ -405,7 +539,10 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
               ...current,
               readiness: { ...current.readiness, [key]: value },
             }))}
-            onNutrition={() => setNutritionOpen(true)}
+            onNutrition={() => {
+              setTab("nutrition");
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
             onCoach={askCoach}
             onPlan={() => setTab("plan")}
           />
@@ -433,6 +570,20 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
             onFinish={finishWorkout}
             onReset={resetWorkout}
             onGuide={setGuideExercise}
+          />
+        )}
+
+        {tab === "nutrition" && (
+          <NutritionView
+            entries={foodEntries}
+            nutrition={state.nutrition}
+            todayKey={todayKey}
+            onSave={saveFoodEntry}
+            onDelete={deleteFoodEntry}
+            onAddWater={() => setState((current) => ({
+              ...current,
+              nutrition: { ...current.nutrition, waterMl: current.nutrition.waterMl + 250 },
+            }))}
           />
         )}
 
@@ -471,14 +622,6 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
           );
         })}
       </nav>
-
-      {nutritionOpen && (
-        <NutritionSheet
-          nutrition={state.nutrition}
-          onClose={() => setNutritionOpen(false)}
-          onChange={(nutrition) => setState((current) => ({ ...current, nutrition }))}
-        />
-      )}
 
       {coachOpen && (
         <CoachSheet
@@ -864,6 +1007,14 @@ function ProfileView({ state, setState }: { state: PersistedState; setState: Rea
         <span className="profile-badge"><BadgeCheckIcon /> Aktiv</span>
       </section>
 
+      <section className="settings-card appearance-card">
+        <div className="section-heading"><div><span>UTSEENDE</span><h3>Ljust eller mörkt</h3></div>{state.theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}</div>
+        <div className="theme-switch" role="group" aria-label="Välj färgläge">
+          <button type="button" className={state.theme === "dark" ? "active" : ""} onClick={() => setState((current) => ({ ...current, theme: "dark" }))}><Moon size={17} /><span><strong>Mörkt</strong><small>Lugnare på kvällen</small></span><Check size={16} /></button>
+          <button type="button" className={state.theme === "light" ? "active" : ""} onClick={() => setState((current) => ({ ...current, theme: "light" }))}><Sun size={17} /><span><strong>Ljust</strong><small>Tydligt i dagsljus</small></span><Check size={16} /></button>
+        </div>
+      </section>
+
       <section className="settings-card">
         <div className="section-heading"><div><span>GRUNDUPPGIFTER</span><h3>Din profil</h3></div><UserRound size={20} /></div>
         <div className="form-grid">
@@ -965,45 +1116,341 @@ function RestTimer({ remaining, total, onAdd, onClose }: { remaining: number; to
   );
 }
 
-function NutritionSheet({ nutrition, onClose, onChange }: { nutrition: PersistedState["nutrition"]; onClose: () => void; onChange: (nutrition: PersistedState["nutrition"]) => void }) {
-  const [name, setName] = useState("");
-  const [meal, setMeal] = useState("Mellanmål");
-  const [calories, setCalories] = useState("");
-  const [protein, setProtein] = useState("");
-  const totals = totalNutrition(nutrition.entries);
-
-  function addEntry() {
-    if (!name.trim() || !calories) return;
-    onChange({
-      ...nutrition,
-      entries: [...nutrition.entries, { id: crypto.randomUUID(), name: name.trim(), meal, calories: Number(calories), protein: Number(protein || 0) }],
+async function prepareFoodImage(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new window.Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Bilden kunde inte öppnas."));
+      element.src = objectUrl;
     });
-    setName("");
-    setCalories("");
-    setProtein("");
+    const maxSide = 1280;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Bilden kunde inte förberedas.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Bilden kunde inte komprimeras.")), "image/jpeg", 0.84);
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function NutritionView({
+  entries,
+  nutrition,
+  todayKey,
+  onSave,
+  onDelete,
+  onAddWater,
+}: {
+  entries: FoodEntry[];
+  nutrition: PersistedState["nutrition"];
+  todayKey: string;
+  onSave: (entry: FoodEntry, image?: Blob | null) => Promise<void>;
+  onDelete: (entry: FoodEntry) => Promise<void>;
+  onAddWater: () => void;
+}) {
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [description, setDescription] = useState("");
+  const [meal, setMeal] = useState("Mellanmål");
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [estimate, setEstimate] = useState<NutritionEstimate | null>(null);
+  const [status, setStatus] = useState<"idle" | "preparing" | "analyzing" | "saving">("idle");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+  }, [imagePreview]);
+
+  const dayEntries = useMemo(
+    () => entries.filter((entry) => entryDate(entry, todayKey) === selectedDate),
+    [entries, selectedDate, todayKey],
+  );
+  const totals = useMemo(() => totalNutrition(dayEntries), [dayEntries]);
+  const caloriePct = Math.min(100, Math.round((totals.calories / Math.max(1, nutrition.calorieTarget)) * 100));
+  const proteinPct = Math.min(100, Math.round((totals.protein / Math.max(1, nutrition.proteinTarget)) * 100));
+  const dateLabel = new Intl.DateTimeFormat("sv-SE", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${selectedDate}T12:00:00.000Z`));
+
+  async function selectImage(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    setSuccess("");
+    setEstimate(null);
+    setStatus("preparing");
+    try {
+      const blob = await prepareFoodImage(file);
+      setImageBlob(blob);
+      setImagePreview(URL.createObjectURL(blob));
+    } catch (imageError) {
+      setError(imageError instanceof Error ? imageError.message : "Bilden kunde inte öppnas.");
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  function clearImage() {
+    setImageBlob(null);
+    setImagePreview("");
+    if (cameraInput.current) cameraInput.current.value = "";
+    if (galleryInput.current) galleryInput.current.value = "";
+  }
+
+  async function analyzeMeal() {
+    if (!description.trim() && !imageBlob) {
+      setError("Skriv vad du åt eller lägg till en bild först.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setStatus("analyzing");
+    try {
+      const form = new FormData();
+      form.append("description", description.trim());
+      if (imageBlob) form.append("image", imageBlob, "meal.jpg");
+      const response = await fetch("/api/nutrition/analyze", { method: "POST", body: form });
+      const body = (await response.json()) as { estimate?: NutritionEstimate; error?: string };
+      if (!response.ok || !body.estimate) throw new Error(body.error || "Måltiden kunde inte analyseras.");
+      setEstimate(body.estimate);
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "Måltiden kunde inte analyseras.");
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  function startManualEntry() {
+    setError("");
+    setSuccess("");
+    setEstimate({
+      title: description.trim() || "Måltid",
+      calories: 0,
+      protein: 0,
+      confidence: "low",
+      assumptions: [],
+      items: [],
+    });
+  }
+
+  async function logEstimate() {
+    if (!estimate?.title.trim()) return;
+    setStatus("saving");
+    setError("");
+    try {
+      const loggedAt = selectedDate === todayKey ? new Date().toISOString() : `${selectedDate}T12:00:00.000Z`;
+      await onSave({
+        id: crypto.randomUUID(),
+        name: estimate.title.trim(),
+        meal,
+        calories: Math.max(0, Math.round(estimate.calories)),
+        protein: Math.max(0, Math.round(estimate.protein * 10) / 10),
+        loggedAt,
+        source: imageBlob ? "ai-image" : description.trim() ? "ai-text" : "manual",
+        confidence: estimate.confidence,
+        description: description.trim(),
+        details: { assumptions: estimate.assumptions, items: estimate.items },
+      }, imageBlob);
+      setDescription("");
+      setEstimate(null);
+      clearImage();
+      setSuccess("Måltiden är sparad och inräknad i dagens summa.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Måltiden kunde inte sparas.");
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  async function removeEntry(entry: FoodEntry) {
+    setError("");
+    try {
+      await onDelete(entry);
+      setSuccess(`${entry.name} togs bort.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Måltiden kunde inte tas bort.");
+    }
+  }
+
+  const meals = ["Frukost", "Lunch", "Middag", "Mellanmål"];
+
+  return (
+    <>
+      <PageIntro eyebrow="MATLOGG & RECEPT" title="Mat som räknar med dig" description="Beskriv en måltid eller fotografera tallriken. Granska alltid uppskattningen innan du sparar." />
+
+      <section className="nutrition-dashboard card-surface">
+        <div className="nutrition-date-row">
+          <button type="button" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} aria-label="Föregående dag"><ChevronLeft size={18} /></button>
+          <label>
+            <small>{selectedDate === todayKey ? "IDAG" : "VALD DAG"}</small>
+            <strong>{dateLabel}</strong>
+            <input type="date" value={selectedDate} max={todayKey} onChange={(event) => setSelectedDate(event.target.value || todayKey)} aria-label="Välj datum" />
+          </label>
+          <button type="button" disabled={selectedDate >= todayKey} onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Nästa dag"><ChevronRight size={18} /></button>
+        </div>
+        <div className="nutrition-hero-metrics">
+          <div className="nutrition-goal"><ProgressRing value={caloriePct} label="energi" main={`${totals.calories} kcal`} sub={`/ ${nutrition.calorieTarget} kcal`} /><p>{Math.max(0, nutrition.calorieTarget - totals.calories)} kcal kvar</p></div>
+          <div className="nutrition-goal"><ProgressRing value={proteinPct} label="protein" main={`${formatNumber(totals.protein)} g`} sub={`/ ${nutrition.proteinTarget} g`} /><p>{formatNumber(Math.max(0, nutrition.proteinTarget - totals.protein))} g kvar</p></div>
+          <div className="water-goal"><span><Waves size={20} /></span><small>VATTEN</small><strong>{selectedDate === todayKey ? formatNumber(nutrition.waterMl / 1000) : "–"} l</strong><button type="button" disabled={selectedDate !== todayKey} onClick={onAddWater}>+ 250 ml</button></div>
+        </div>
+      </section>
+
+      <section className="meal-composer card-surface">
+        <div className="section-heading"><div><span>SNABBLOGGA</span><h3>Vad åt du?</h3></div><ScanLine size={20} /></div>
+        <textarea value={description} onChange={(event) => { setDescription(event.target.value); setEstimate(null); }} placeholder="Exempel: 200 g kyckling, två potatisar och ungefär 1 msk olivolja …" rows={3} />
+        <div className="composer-controls">
+          <select value={meal} onChange={(event) => setMeal(event.target.value)} aria-label="Måltidstyp"><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select>
+          <button type="button" onClick={() => cameraInput.current?.click()}><Camera size={17} /> Kamera</button>
+          <button type="button" onClick={() => galleryInput.current?.click()}><ImagePlus size={17} /> Bild</button>
+          <input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={(event) => void selectImage(event.target.files?.[0])} />
+          <input ref={galleryInput} className="visually-hidden" type="file" accept="image/*" onChange={(event) => void selectImage(event.target.files?.[0])} />
+        </div>
+
+        {imagePreview && (
+          <div className="food-photo-preview">
+            <span className="food-photo-preview-image" role="img" aria-label="Vald måltidsbild" style={{ backgroundImage: `url(${imagePreview})` }} />
+            <span><Camera size={14} /> Redo för analys</span>
+            <button type="button" onClick={clearImage} aria-label="Ta bort vald bild"><X size={17} /></button>
+          </div>
+        )}
+
+        <div className="composer-actions">
+          <button className="primary-action" type="button" disabled={status !== "idle" || (!description.trim() && !imageBlob)} onClick={() => void analyzeMeal()}>
+            {status === "analyzing" || status === "preparing" ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
+            {status === "preparing" ? "Förbereder bild …" : status === "analyzing" ? "Beräknar …" : "Beräkna kcal & protein"}
+          </button>
+          <button className="manual-link" type="button" disabled={status !== "idle"} onClick={startManualEntry}>Fyll i manuellt</button>
+        </div>
+
+        {error && <div className="nutrition-notice error"><CircleAlert size={16} />{error}</div>}
+        {success && <div className="nutrition-notice success"><Check size={16} />{success}</div>}
+
+        {estimate && (
+          <div className="estimate-review">
+            <div className="estimate-review-head"><div><small>GRANSKA UPPSKATTNINGEN</small><strong>Justera före sparning</strong></div><span className={`confidence ${estimate.confidence}`}>{estimate.confidence === "high" ? "Hög" : estimate.confidence === "medium" ? "Medel" : "Låg"} säkerhet</span></div>
+            <label className="estimate-title"><span>Måltid</span><input value={estimate.title} onChange={(event) => setEstimate({ ...estimate, title: event.target.value })} /></label>
+            <div className="estimate-numbers">
+              <label><span>Kalorier</span><div><input type="number" inputMode="numeric" min="0" value={estimate.calories} onChange={(event) => setEstimate({ ...estimate, calories: Number(event.target.value) })} /><i>kcal</i></div></label>
+              <label><span>Protein</span><div><input type="number" inputMode="decimal" min="0" step="0.1" value={estimate.protein} onChange={(event) => setEstimate({ ...estimate, protein: Number(event.target.value) })} /><i>g</i></div></label>
+            </div>
+            {estimate.items.length > 0 && <div className="estimate-items">{estimate.items.map((item, index) => <div key={`${item.name}-${index}`}><span><strong>{item.name}</strong><small>{item.amount}</small></span><span>{item.calories} kcal · {formatNumber(item.protein)} g</span></div>)}</div>}
+            {estimate.assumptions.length > 0 && <div className="estimate-assumptions"><Info size={15} /><span><strong>Antaganden</strong>{estimate.assumptions.join(" · ")}</span></div>}
+            <p className="estimate-disclaimer">Bild- och textanalys är en uppskattning. Portionsstorlek, olja, såser och varumärken kan ändra resultatet mycket.</p>
+            <button className="primary-action" type="button" disabled={status === "saving" || !estimate.title.trim()} onClick={() => void logEstimate()}>{status === "saving" ? <LoaderCircle className="spin" size={18} /> : <Check size={18} />} {status === "saving" ? "Sparar …" : "Bekräfta och logga"}</button>
+          </div>
+        )}
+      </section>
+
+      <section className="daily-log">
+        <div className="section-heading"><div><span>DAGENS LOGG</span><h3>{dayEntries.length ? `${dayEntries.length} måltider` : "Inget loggat ännu"}</h3></div><Utensils size={20} /></div>
+        {dayEntries.length === 0 ? (
+          <div className="food-empty card-surface"><Utensils size={27} /><p>Din första måltid för dagen hamnar här.</p></div>
+        ) : meals.map((mealName) => {
+          const mealEntries = dayEntries.filter((entry) => entry.meal === mealName);
+          if (!mealEntries.length) return null;
+          return (
+            <div className="meal-group" key={mealName}>
+              <div className="meal-group-head"><strong>{mealName}</strong><span>{mealEntries.reduce((sum, entry) => sum + entry.calories, 0)} kcal</span></div>
+              {mealEntries.map((entry) => (
+                <article className="meal-entry" key={entry.id}>
+                  {entry.imageKey ? <Image className="meal-entry-photo" src={`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`} alt={`Måltidsbild för ${entry.name}`} width={78} height={78} unoptimized /> : <span className="meal-entry-icon">{entry.source === "recipe" ? "🍽️" : <Apple size={20} />}</span>}
+                  <div className="meal-entry-copy"><span><small>{entry.source === "ai-image" ? "BILDANALYS" : entry.source === "ai-text" ? "TEXTANALYS" : entry.source === "recipe" ? "RECEPT" : "MANUELL"}</small>{entry.confidence && <i>{entry.confidence === "high" ? "hög" : entry.confidence === "medium" ? "medel" : "låg"} säkerhet</i>}</span><strong>{entry.name}</strong>{entry.description && <p>{entry.description}</p>}</div>
+                  <div className="meal-entry-macros"><strong>{entry.calories} kcal</strong><span>{formatNumber(entry.protein)} g protein</span></div>
+                  <button className="meal-delete" type="button" onClick={() => void removeEntry(entry)} aria-label={`Ta bort ${entry.name}`}><Trash2 size={16} /></button>
+                </article>
+              ))}
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="recipe-library">
+        <div className="section-heading"><div><span>DINA RECEPT</span><h3>Snabbt att laga, lätt att logga</h3></div><BookOpen size={20} /></div>
+        <div className="recipe-grid">
+          {RECIPES.map((recipe) => (
+            <button className="recipe-card" type="button" key={recipe.id} onClick={() => setSelectedRecipe(recipe)}>
+              <span className="recipe-emoji">{recipe.emoji}</span>
+              <small>{recipe.category}</small>
+              <strong>{recipe.name}</strong>
+              <p>{recipe.yield}</p>
+              <div><span>{recipe.nutrition.calories} kcal</span><span>{formatNumber(recipe.nutrition.protein)} g protein</span></div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {selectedRecipe && <RecipeSheet recipe={selectedRecipe} selectedDate={selectedDate} todayKey={todayKey} onSave={onSave} onClose={() => setSelectedRecipe(null)} />}
+    </>
+  );
+}
+
+function RecipeSheet({ recipe, selectedDate, todayKey, onSave, onClose }: { recipe: Recipe; selectedDate: string; todayKey: string; onSave: (entry: FoodEntry) => Promise<void>; onClose: () => void }) {
+  const [amount, setAmount] = useState(recipe.nutrition.defaultAmount);
+  const [meal, setMeal] = useState(recipe.category === "Frukost" ? "Frukost" : "Middag");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const factor = recipe.nutrition.basis === "100g" ? amount / 100 : amount;
+  const calories = Math.max(0, Math.round(recipe.nutrition.calories * factor));
+  const protein = Math.max(0, Math.round(recipe.nutrition.protein * factor * 10) / 10);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  async function logRecipe() {
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({
+        id: crypto.randomUUID(),
+        name: recipe.name,
+        meal,
+        calories,
+        protein,
+        loggedAt: selectedDate === todayKey ? new Date().toISOString() : `${selectedDate}T12:00:00.000Z`,
+        source: "recipe",
+        confidence: "medium",
+        description: `${formatNumber(amount)} ${recipe.nutrition.unit}`,
+        details: { recipeId: recipe.id, amount, unit: recipe.nutrition.unit, assumptions: [recipe.nutrition.note] },
+      });
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Receptet kunde inte loggas.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="bottom-sheet" role="dialog" aria-modal="true" aria-label="Kostlogg">
+    <div className="sheet-backdrop recipe-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="bottom-sheet recipe-sheet" role="dialog" aria-modal="true" aria-labelledby={`recipe-${recipe.id}`}>
         <div className="sheet-handle" />
-        <div className="sheet-head"><div><small>KOST IDAG</small><h2>Mat & protein</h2></div><button type="button" onClick={onClose}><X size={20} /></button></div>
-        <div className="nutrition-summary">
-          <div><span><Apple size={18} /></span><small>Kalorier</small><strong>{totals.calories}</strong><p>{Math.max(0, nutrition.calorieTarget - totals.calories)} kvar</p></div>
-          <div><span><Dumbbell size={18} /></span><small>Protein</small><strong>{formatNumber(totals.protein)} g</strong><p>{formatNumber(Math.max(0, nutrition.proteinTarget - totals.protein))} g kvar</p></div>
-          <div><span><Waves size={18} /></span><small>Vatten</small><strong>{formatNumber(nutrition.waterMl / 1000)} l</strong><button type="button" onClick={() => onChange({ ...nutrition, waterMl: nutrition.waterMl + 250 })}>+250 ml</button></div>
+        <div className="sheet-head"><div><small>{recipe.category.toUpperCase()}</small><h2 id={`recipe-${recipe.id}`}>{recipe.name}</h2><p>{recipe.yield}</p></div><button type="button" onClick={onClose} aria-label="Stäng recept"><X size={20} /></button></div>
+        <div className="recipe-sheet-hero"><span>{recipe.emoji}</span><div><small>UPPSKATTAT NÄRINGSVÄRDE</small><strong>{calories} kcal · {formatNumber(protein)} g protein</strong><p>{recipe.nutrition.note}</p></div></div>
+        <div className="recipe-columns">
+          <section><h3>Ingredienser</h3><ul>{recipe.ingredients.map((ingredient) => <li key={ingredient}><Check size={14} />{ingredient}</li>)}</ul></section>
+          <section><h3>Gör så här</h3><ol>{recipe.steps.map((step, index) => <li key={step}><span>{index + 1}</span>{step}</li>)}</ol></section>
         </div>
-        <div className="food-form">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Vad åt du?" />
-          <select value={meal} onChange={(event) => setMeal(event.target.value)}><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select>
-          <label><span>kcal</span><input type="number" inputMode="numeric" value={calories} onChange={(event) => setCalories(event.target.value)} placeholder="0" /></label>
-          <label><span>protein</span><input type="number" inputMode="decimal" value={protein} onChange={(event) => setProtein(event.target.value)} placeholder="0 g" /></label>
-          <button type="button" onClick={addEntry}><Plus size={18} /> Lägg till</button>
-        </div>
-        <div className="food-list">
-          {nutrition.entries.length === 0 ? <div className="food-empty"><Utensils size={24} /><p>Ingen mat loggad än idag.</p></div> : nutrition.entries.map((entry) => (
-            <div key={entry.id}><span><small>{entry.meal}</small><strong>{entry.name}</strong></span><span><strong>{entry.calories} kcal</strong><small>{entry.protein} g protein</small></span><button type="button" onClick={() => onChange({ ...nutrition, entries: nutrition.entries.filter((item) => item.id !== entry.id) })}><X size={15} /></button></div>
-          ))}
+        <div className="recipe-log-box">
+          <div><label><span>Mängd</span><div><input type="number" min="0.1" step={recipe.nutrition.unit === "g" ? 10 : 0.25} value={amount} onChange={(event) => setAmount(Math.max(0, Number(event.target.value)))} /><i>{recipe.nutrition.unit}</i></div></label><label><span>Måltid</span><select value={meal} onChange={(event) => setMeal(event.target.value)}><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select></label></div>
+          {error && <div className="nutrition-notice error"><CircleAlert size={15} />{error}</div>}
+          <button className="primary-action" type="button" disabled={saving || amount <= 0} onClick={() => void logRecipe()}>{saving ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />} {saving ? "Sparar …" : `Logga ${calories} kcal`}</button>
         </div>
       </section>
     </div>

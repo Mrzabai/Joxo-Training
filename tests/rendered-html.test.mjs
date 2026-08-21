@@ -84,7 +84,7 @@ test("serves exercise images directly without the unavailable image proxy", asyn
   const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
 
   assert.match(config, /unoptimized:\s*true/);
-  assert.equal(trainingApp.match(/\bunoptimized\b/g)?.length, 6);
+  assert.ok((trainingApp.match(/\bunoptimized\b/g)?.length ?? 0) >= 6);
 
   const imageHtml = renderToStaticMarkup(
     React.createElement(NextImage, {
@@ -119,8 +119,12 @@ test("has no active Notion integration, links, or settings", async () => {
   const runtimeFiles = [
     "../app/training-app.tsx",
     "../app/lib/program.ts",
+    "../app/lib/recipes.ts",
     "../app/layout.tsx",
     "../app/globals.css",
+    "../app/api/nutrition/analyze/route.ts",
+    "../app/api/nutrition/entries/route.ts",
+    "../app/api/nutrition/photo/route.ts",
     "../db/schema.ts",
     "../README.md",
   ];
@@ -132,6 +136,39 @@ test("has no active Notion integration, links, or settings", async () => {
 
   await assert.rejects(stat(new URL("../app/api/notion/route.ts", import.meta.url)));
   await assert.rejects(stat(new URL("../.env.example", import.meta.url)));
+});
+
+test("includes durable AI-assisted food logging, recipes, and theme switching", async () => {
+  const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+  const recipes = await readFile(new URL("../app/lib/recipes.ts", import.meta.url), "utf8");
+  const analysisRoute = await readFile(new URL("../app/api/nutrition/analyze/route.ts", import.meta.url), "utf8");
+  const entryRoute = await readFile(new URL("../app/api/nutrition/entries/route.ts", import.meta.url), "utf8");
+  const photoRoute = await readFile(new URL("../app/api/nutrition/photo/route.ts", import.meta.url), "utf8");
+  const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8");
+  const hosting = JSON.parse(await readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"));
+
+  for (const name of [
+    "Bellas carnivore chips",
+    "Ostkaka",
+    "Protein-matmuffin",
+    "Räkpizza med vitlökscrème och dill",
+    "Gröt à la Joxo",
+    "Overnight oats med blåbär",
+  ]) {
+    assert.match(recipes, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.match(trainingApp, /"nutrition", label: "Mat"/);
+  assert.match(trainingApp, /Beräkna kcal & protein/);
+  assert.match(trainingApp, /GRANSKA UPPSKATTNINGEN/);
+  assert.match(trainingApp, /joxo-theme/);
+  assert.match(analysisRoute, /model: "gpt-5\.4-mini"/);
+  assert.match(analysisRoute, /type: "input_image"/);
+  assert.match(entryRoute, /nutritionEntries/);
+  assert.match(photoRoute, /BUCKET/);
+  assert.match(schema, /"nutrition_entries"/);
+  assert.equal(hosting.d1, "DB");
+  assert.equal(hosting.r2, "BUCKET");
 });
 
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {

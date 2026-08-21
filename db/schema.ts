@@ -143,6 +143,29 @@ export const foodItems = sqliteTable("food_items", {
   ...timestamps,
 });
 
+export const nutritionEntries = sqliteTable(
+  "nutrition_entries",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    loggedAt: text("logged_at").notNull(),
+    mealType: text("meal_type").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    calories: integer("calories").notNull(),
+    protein: real("protein").notNull().default(0),
+    source: text("source").notNull().default("manual"),
+    confidence: text("confidence"),
+    imageKey: text("image_key"),
+    imageType: text("image_type"),
+    detailsJson: text("details_json").notNull().default("{}"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("nutrition_entries_owner_id_idx").on(table.owner, table.id),
+  ],
+);
+
 export const coachRecommendations = sqliteTable("coach_recommendations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   owner: text("owner").notNull(),

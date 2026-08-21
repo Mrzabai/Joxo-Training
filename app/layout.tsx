@@ -48,7 +48,9 @@ export default function RootLayout({
   return (
     <html lang="sv" suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content="#080a09" />
+        <script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('joxo-theme')==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}" }} />
+        <meta name="theme-color" content="#080a09" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#f2f5ec" media="(prefers-color-scheme: light)" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="Joxo Training" />
         <link rel="manifest" href={`/${APP_INSTALL_VERSION}.webmanifest`} />
