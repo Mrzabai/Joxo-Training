@@ -219,6 +219,30 @@ test("includes durable local food-database logging, recipes, photos, and theme s
   assert.equal(packageJson.devDependencies.wrangler, undefined);
 });
 
+test("supports editing meals and ingredients with durable daily history comparisons", async () => {
+  const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+  const entryRoute = await readFile(new URL("../app/api/nutrition/entries/route.ts", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(trainingApp, /function NutritionEditSheet/);
+  assert.match(trainingApp, /REDIGERA MATLOGG/);
+  assert.match(trainingApp, /Måltid och råvaror/);
+  assert.match(trainingApp, /Lägg till råvara/);
+  assert.match(trainingApp, /Spara ändringar/);
+  assert.match(trainingApp, /method: isExisting \? "PUT" : "POST"/);
+  assert.match(trainingApp, /details: \{ \.\.\.entry\.details, items: storedItems \}/);
+  assert.match(trainingApp, /SPARADE DAGAR/);
+  assert.match(trainingApp, /Jämför dagar/);
+  assert.match(trainingApp, /nutritionDaySummaries/);
+  assert.match(trainingApp, /nutrition\/entries\?limit=5000/);
+  assert.match(entryRoute, /export async function PUT/);
+  assert.match(entryRoute, /Math\.min\(5000/);
+  assert.match(entryRoute, /eq\(nutritionEntries\.id, entry\.id\).*eq\(nutritionEntries\.owner, owner\)/s);
+  assert.match(styles, /\.nutrition-comparison/);
+  assert.match(styles, /\.nutrition-edit-sheet/);
+  assert.match(styles, /\.meal-edit/);
+});
+
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   const icons = [
     ["../public/apple-touch-icon.png", 180],

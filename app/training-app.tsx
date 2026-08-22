@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   Minus,
   Moon,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -47,7 +48,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PROGRAM, getExerciseAdvice, type Exercise, type WorkoutDay } from "./lib/program";
 import { RECIPES, type Recipe } from "./lib/recipes";
 
@@ -97,6 +98,8 @@ type NutritionItem = {
   foodId?: number;
   name: string;
   amount: string;
+  quantity?: number;
+  unit?: string;
   grams?: number;
   calories: number;
   protein: number;
@@ -149,6 +152,19 @@ type FoodMatchGroup = {
 };
 
 type NutritionEngine = "manual" | "saved-recipe" | "food-database";
+
+type NutritionDaySummary = {
+  date: string;
+  calories: number;
+  protein: number;
+  entryCount: number;
+};
+
+type EditableNutritionItem = NutritionItem & {
+  editorId: string;
+  quantityText: string;
+  unitValue: string;
+};
 
 const QUICK_FOODS = ["Vaniljkvarg", "Lågkalori hallonsylt", "Kycklingfilé", "Havregryn", "Ägg", "KESO", "Wasa Protein+", "ProPud", "Barebells"];
 
@@ -298,6 +314,46 @@ function shiftDate(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
+function nutritionDaySummaries(entries: FoodEntry[], fallback: string): NutritionDaySummary[] {
+  const summaries = new Map<string, NutritionDaySummary>();
+  entries.forEach((entry) => {
+    const date = entryDate(entry, fallback);
+    const current = summaries.get(date) ?? { date, calories: 0, protein: 0, entryCount: 0 };
+    summaries.set(date, {
+      date,
+      calories: current.calories + entry.calories,
+      protein: Math.round((current.protein + entry.protein) * 10) / 10,
+      entryCount: current.entryCount + 1,
+    });
+  });
+  return [...summaries.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function nutritionDateLabel(date: string, todayKey: string, long = false) {
+  if (date === todayKey) return "Idag";
+  return new Intl.DateTimeFormat("sv-SE", long
+    ? { weekday: "long", day: "numeric", month: "long", year: "numeric" }
+    : { day: "numeric", month: "short" })
+    .format(new Date(`${date}T12:00:00.000Z`));
+}
+
+function nutritionDifference(value: number, unit: string) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded > 0 ? "+" : ""}${formatNumber(rounded)} ${unit}`;
+}
+
+function editableNutritionItem(item: NutritionItem, index: number): EditableNutritionItem {
+  const match = item.amount?.replace(",", ".").match(/([\d.]+)\s*(kg|g|dl|ml|st|styck|portion|msk|tsk)?/i);
+  const quantity = Number(item.quantity ?? match?.[1] ?? item.grams ?? 0);
+  const rawUnit = item.unit ?? match?.[2] ?? (item.grams ? "g" : "g");
+  return {
+    ...item,
+    editorId: `${item.foodId ?? "item"}-${index}-${item.name}`,
+    quantityText: Number.isFinite(quantity) && quantity > 0 ? String(quantity) : "",
+    unitValue: rawUnit.toLowerCase() === "styck" ? "st" : rawUnit.toLowerCase(),
+  };
+}
+
 export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLabel: string; greeting: string; nowIso: string }) {
   const [tab, setTab] = useState<TabId>("today");
   const [state, setState] = useState<PersistedState>(initialState);
@@ -346,7 +402,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
       try {
         const [stateResult, foodResult] = await Promise.allSettled([
           fetch("/api/state", { cache: "no-store" }),
-          fetch("/api/nutrition/entries", { cache: "no-store" }),
+          fetch("/api/nutrition/entries?limit=5000", { cache: "no-store" }),
         ]);
         const response = stateResult.status === "fulfilled" ? stateResult.value : null;
         const body = response ? (await response.json()) as { state?: Partial<PersistedState> | null } : { state: null };
@@ -410,7 +466,7 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
 
   useEffect(() => {
     if (!hydrated) return;
-    window.localStorage.setItem(FOOD_STORAGE_KEY, JSON.stringify(foodEntries.slice(0, 500)));
+    window.localStorage.setItem(FOOD_STORAGE_KEY, JSON.stringify(foodEntries.slice(0, 1000)));
   }, [foodEntries, hydrated]);
 
   useEffect(() => {
@@ -420,23 +476,34 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
 
   async function saveFoodEntry(draft: FoodEntry, image: Blob | null = null) {
     let entry = { ...draft };
+    let uploadedImageKey: string | null = null;
     if (image) {
       const form = new FormData();
       form.append("image", image, "meal.jpg");
       const uploadResponse = await fetch("/api/nutrition/photo", { method: "POST", body: form });
       const upload = (await uploadResponse.json()) as { key?: string; type?: string; error?: string };
       if (!uploadResponse.ok || !upload.key) throw new Error(upload.error || "Bilden kunde inte sparas.");
+      uploadedImageKey = upload.key;
       entry = { ...entry, imageKey: upload.key, imageType: upload.type ?? "image/jpeg" };
     }
 
-    const response = await fetch("/api/nutrition/entries", {
-      method: "POST",
+    const isExisting = foodEntries.some((item) => item.id === entry.id);
+    const requestBody = JSON.stringify(entry);
+    let response = await fetch("/api/nutrition/entries", {
+      method: isExisting ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entry),
+      body: requestBody,
     });
+    if (isExisting && response.status === 404) {
+      response = await fetch("/api/nutrition/entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+      });
+    }
     const body = (await response.json()) as { error?: string };
     if (!response.ok) {
-      if (entry.imageKey) void fetch(`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`, { method: "DELETE" });
+      if (uploadedImageKey) void fetch(`/api/nutrition/photo?key=${encodeURIComponent(uploadedImageKey)}`, { method: "DELETE" });
       throw new Error(body.error || "Måltiden kunde inte sparas.");
     }
 
@@ -1234,6 +1301,11 @@ function NutritionView({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [visibleHistoryDays, setVisibleHistoryDays] = useState(14);
+  const [compareDateA, setCompareDateA] = useState(todayKey);
+  const [compareDateB, setCompareDateB] = useState(shiftDate(todayKey, -1));
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
@@ -1241,6 +1313,7 @@ function NutritionView({
     if (imagePreview) URL.revokeObjectURL(imagePreview);
   }, [imagePreview]);
 
+  const savedDays = useMemo(() => nutritionDaySummaries(entries, todayKey), [entries, todayKey]);
   const dayEntries = useMemo(
     () => entries.filter((entry) => entryDate(entry, todayKey) === selectedDate),
     [entries, selectedDate, todayKey],
@@ -1249,6 +1322,12 @@ function NutritionView({
   const caloriePct = Math.min(100, Math.round((totals.calories / Math.max(1, nutrition.calorieTarget)) * 100));
   const proteinPct = Math.min(100, Math.round((totals.protein / Math.max(1, nutrition.proteinTarget)) * 100));
   const dateLabel = new Intl.DateTimeFormat("sv-SE", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${selectedDate}T12:00:00.000Z`));
+  const effectiveCompareDateA = savedDays.some((day) => day.date === compareDateA) ? compareDateA : savedDays[0]?.date ?? compareDateA;
+  const effectiveCompareDateB = savedDays.some((day) => day.date === compareDateB && day.date !== effectiveCompareDateA)
+    ? compareDateB
+    : savedDays.find((day) => day.date !== effectiveCompareDateA)?.date ?? effectiveCompareDateA;
+  const comparisonA = savedDays.find((day) => day.date === effectiveCompareDateA) ?? null;
+  const comparisonB = savedDays.find((day) => day.date === effectiveCompareDateB) ?? null;
 
   async function selectImage(file: File | undefined) {
     if (!file) return;
@@ -1399,6 +1478,14 @@ function NutritionView({
     }
   }
 
+  async function saveEditedEntry(entry: FoodEntry) {
+    await onSave(entry);
+    const savedDate = entryDate(entry, todayKey);
+    setSelectedDate(savedDate);
+    setSuccess(`${entry.name} uppdaterades.`);
+    setEditingEntry(null);
+  }
+
   const meals = ["Frukost", "Lunch", "Middag", "Mellanmål"];
 
   return (
@@ -1420,6 +1507,57 @@ function NutritionView({
           <div className="nutrition-goal"><ProgressRing value={proteinPct} label="protein" main={`${formatNumber(totals.protein)} g`} sub={`/ ${nutrition.proteinTarget} g`} /><p>{formatNumber(Math.max(0, nutrition.proteinTarget - totals.protein))} g kvar</p></div>
           <div className="water-goal"><span><Waves size={20} /></span><small>VATTEN</small><strong>{selectedDate === todayKey ? formatNumber(nutrition.waterMl / 1000) : "–"} l</strong><button type="button" disabled={selectedDate !== todayKey} onClick={onAddWater}>+ 250 ml</button></div>
         </div>
+      </section>
+
+      <section className="nutrition-history card-surface">
+        <div className="section-heading">
+          <div><span>SPARADE DAGAR</span><h3>{savedDays.length ? `${savedDays.length} loggade ${savedDays.length === 1 ? "dag" : "dagar"}` : "Historiken börjar här"}</h3></div>
+          <CalendarDays size={20} />
+        </div>
+        <p className="nutrition-history-intro">Varje måltid sparas på sitt datum. Öppna en dag för att se eller ändra loggen, och jämför sedan kalorier och protein mellan två dagar.</p>
+        {savedDays.length === 0 ? (
+          <div className="nutrition-history-empty"><Cloud size={18} /><span>Din första sparade dag visas här automatiskt.</span></div>
+        ) : (
+          <>
+            <div className="nutrition-day-list" aria-label="Sparade matdagar">
+              {savedDays.slice(0, visibleHistoryDays).map((day) => (
+                <button className={day.date === selectedDate ? "active" : ""} type="button" key={day.date} aria-pressed={day.date === selectedDate} onClick={() => setSelectedDate(day.date)}>
+                  <small>{nutritionDateLabel(day.date, todayKey)}</small>
+                  <strong>{day.calories} kcal</strong>
+                  <span>{formatNumber(day.protein)} g protein · {day.entryCount} {day.entryCount === 1 ? "post" : "poster"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="nutrition-history-actions">
+              {savedDays.length > visibleHistoryDays && <button type="button" onClick={() => setVisibleHistoryDays((current) => current + 30)}>Visa fler dagar</button>}
+              <button className={compareOpen ? "active" : ""} type="button" onClick={() => setCompareOpen((current) => !current)}><BarChart3 size={15} /> {compareOpen ? "Dölj jämförelse" : "Jämför dagar"}<ChevronDown size={15} /></button>
+            </div>
+          </>
+        )}
+
+        {compareOpen && savedDays.length < 2 && (
+          <div className="nutrition-history-empty"><Info size={18} /><span>Logga mat på minst två olika dagar för att kunna jämföra dem.</span></div>
+        )}
+
+        {compareOpen && savedDays.length >= 2 && comparisonA && comparisonB && (
+          <div className="nutrition-comparison">
+            <div className="nutrition-comparison-selects">
+              <label><span>Dag A</span><select value={effectiveCompareDateA} onChange={(event) => { const next = event.target.value; setCompareDateA(next); if (next === effectiveCompareDateB) setCompareDateB(savedDays.find((day) => day.date !== next)?.date ?? effectiveCompareDateB); }}>{savedDays.map((day) => <option value={day.date} key={`a-${day.date}`}>{nutritionDateLabel(day.date, todayKey, true)}</option>)}</select></label>
+              <label><span>Dag B</span><select value={effectiveCompareDateB} onChange={(event) => { const next = event.target.value; setCompareDateB(next); if (next === effectiveCompareDateA) setCompareDateA(savedDays.find((day) => day.date !== next)?.date ?? effectiveCompareDateA); }}>{savedDays.map((day) => <option value={day.date} key={`b-${day.date}`}>{nutritionDateLabel(day.date, todayKey, true)}</option>)}</select></label>
+            </div>
+            <div className="nutrition-comparison-cards">
+              {[comparisonA, comparisonB].map((day, index) => (
+                <button type="button" key={day.date} onClick={() => setSelectedDate(day.date)}>
+                  <small>DAG {index === 0 ? "A" : "B"} · {nutritionDateLabel(day.date, todayKey)}</small>
+                  <strong>{day.calories} kcal</strong>
+                  <span>{formatNumber(day.protein)} g protein</span>
+                  <i>{day.entryCount} {day.entryCount === 1 ? "måltid" : "måltider"}</i>
+                </button>
+              ))}
+            </div>
+            <div className="nutrition-comparison-delta"><span>Skillnad A mot B</span><strong>{nutritionDifference(comparisonA.calories - comparisonB.calories, "kcal")}</strong><strong>{nutritionDifference(comparisonA.protein - comparisonB.protein, "g protein")}</strong></div>
+          </div>
+        )}
       </section>
 
       <section className="meal-composer card-surface">
@@ -1518,9 +1656,9 @@ function NutritionView({
       </section>
 
       <section className="daily-log">
-        <div className="section-heading"><div><span>DAGENS LOGG</span><h3>{dayEntries.length ? `${dayEntries.length} måltider` : "Inget loggat ännu"}</h3></div><Utensils size={20} /></div>
+        <div className="section-heading"><div><span>{selectedDate === todayKey ? "DAGENS LOGG" : "LOGG FÖR VALD DAG"}</span><h3>{dayEntries.length ? `${dayEntries.length} ${dayEntries.length === 1 ? "måltid" : "måltider"}` : "Inget loggat ännu"}</h3></div><Utensils size={20} /></div>
         {dayEntries.length === 0 ? (
-          <div className="food-empty card-surface"><Utensils size={27} /><p>Din första måltid för dagen hamnar här.</p></div>
+          <div className="food-empty card-surface"><Utensils size={27} /><p>Ingen mat är sparad på {nutritionDateLabel(selectedDate, todayKey).toLowerCase()}.</p></div>
         ) : meals.map((mealName) => {
           const mealEntries = dayEntries.filter((entry) => entry.meal === mealName);
           if (!mealEntries.length) return null;
@@ -1532,7 +1670,10 @@ function NutritionView({
                   {entry.imageKey ? <Image className="meal-entry-photo" src={`/api/nutrition/photo?key=${encodeURIComponent(entry.imageKey)}`} alt={`Måltidsbild för ${entry.name}`} width={78} height={78} unoptimized /> : <span className="meal-entry-icon">{entry.source === "recipe" ? "🍽️" : <Apple size={20} />}</span>}
                   <div className="meal-entry-copy"><span><small>{entry.source === "database" ? "MATDATABAS" : entry.source === "ai-image" ? "ÄLDRE BILDANALYS" : entry.source === "ai-text" ? "ÄLDRE TEXTANALYS" : entry.source === "recipe" ? "RECEPT" : "MANUELL"}</small>{entry.confidence && <i>{entry.confidence === "high" ? "hög" : entry.confidence === "medium" ? "medel" : "låg"} säkerhet</i>}</span><strong>{entry.name}</strong>{entry.description && <p>{entry.description}</p>}</div>
                   <div className="meal-entry-macros"><strong>{entry.calories} kcal</strong><span>{formatNumber(entry.protein)} g protein</span></div>
-                  <button className="meal-delete" type="button" onClick={() => void removeEntry(entry)} aria-label={`Ta bort ${entry.name}`}><Trash2 size={16} /></button>
+                  <div className="meal-entry-actions">
+                    <button className="meal-edit" type="button" onClick={() => setEditingEntry(entry)} aria-label={`Redigera ${entry.name}`}><Pencil size={15} /></button>
+                    <button className="meal-delete" type="button" onClick={() => void removeEntry(entry)} aria-label={`Ta bort ${entry.name}`}><Trash2 size={15} /></button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -1556,7 +1697,164 @@ function NutritionView({
       </section>
 
       {selectedRecipe && <RecipeSheet recipe={selectedRecipe} selectedDate={selectedDate} todayKey={todayKey} onSave={onSave} onClose={() => setSelectedRecipe(null)} />}
+      {editingEntry && <NutritionEditSheet entry={editingEntry} todayKey={todayKey} onSave={saveEditedEntry} onClose={() => setEditingEntry(null)} />}
     </>
+  );
+}
+
+function NutritionEditSheet({
+  entry,
+  todayKey,
+  onSave,
+  onClose,
+}: {
+  entry: FoodEntry;
+  todayKey: string;
+  onSave: (entry: FoodEntry) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(entry.name);
+  const [meal, setMeal] = useState(entry.meal);
+  const [loggedDate, setLoggedDate] = useState(entryDate(entry, todayKey));
+  const [description, setDescription] = useState(entry.description ?? "");
+  const [calories, setCalories] = useState(String(entry.calories));
+  const [protein, setProtein] = useState(String(entry.protein));
+  const [items, setItems] = useState<EditableNutritionItem[]>(() => (entry.details?.items ?? []).map(editableNutritionItem));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  function applyItems(next: EditableNutritionItem[]) {
+    setItems(next);
+    if (!next.length) return;
+    setCalories(String(next.reduce((sum, item) => sum + (Number.isFinite(item.calories) ? item.calories : 0), 0)));
+    setProtein(String(Math.round(next.reduce((sum, item) => sum + (Number.isFinite(item.protein) ? item.protein : 0), 0) * 10) / 10));
+  }
+
+  function updateItem(editorId: string, patch: Partial<EditableNutritionItem>) {
+    applyItems(items.map((item) => item.editorId === editorId ? { ...item, ...patch } : item));
+  }
+
+  function addItem() {
+    applyItems([...items, {
+      editorId: crypto.randomUUID(),
+      name: "",
+      amount: "",
+      quantityText: "",
+      unitValue: "g",
+      calories: items.length ? 0 : Math.max(0, Number(calories.replace(",", ".")) || 0),
+      protein: items.length ? 0 : Math.max(0, Number(protein.replace(",", ".")) || 0),
+    }]);
+  }
+
+  async function submitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanName = name.trim();
+    const numericCalories = Number(calories.replace(",", "."));
+    const numericProtein = Number(protein.replace(",", "."));
+    if (!cleanName) {
+      setError("Måltiden behöver ett namn.");
+      return;
+    }
+    if (!loggedDate || loggedDate > todayKey) {
+      setError("Välj dagens datum eller ett tidigare datum.");
+      return;
+    }
+    if (!Number.isFinite(numericCalories) || numericCalories < 0 || !Number.isFinite(numericProtein) || numericProtein < 0) {
+      setError("Kalorier och protein måste vara noll eller mer.");
+      return;
+    }
+    if (items.some((item) => !item.name.trim())) {
+      setError("Alla råvaror behöver ett namn. Ta bort tomma rader som inte ska sparas.");
+      return;
+    }
+
+    const storedItems = items.map((item) => {
+      const quantity = Math.max(0, Number(item.quantityText.replace(",", ".")) || 0);
+      const grams = item.unitValue === "g" ? quantity : item.unitValue === "kg" ? quantity * 1000 : item.grams;
+      return {
+        foodId: item.foodId,
+        name: item.name.trim(),
+        amount: `${formatNumber(quantity)} ${item.unitValue}`,
+        quantity,
+        unit: item.unitValue,
+        ...(grams ? { grams } : {}),
+        calories: Math.max(0, Math.round((Number(item.calories) || 0) * 10) / 10),
+        protein: Math.max(0, Math.round((Number(item.protein) || 0) * 10) / 10),
+        carbs: item.carbs,
+        fat: item.fat,
+        fiber: item.fiber,
+        sourceName: item.sourceName,
+        sourceUrl: item.sourceUrl,
+      };
+    });
+
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({
+        ...entry,
+        name: cleanName,
+        meal,
+        description: description.trim(),
+        calories: Math.round(numericCalories),
+        protein: Math.round(numericProtein * 10) / 10,
+        loggedAt: loggedDate === entryDate(entry, todayKey) && entry.loggedAt ? entry.loggedAt : `${loggedDate}T12:00:00.000Z`,
+        details: { ...entry.details, items: storedItems },
+      });
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Ändringarna kunde inte sparas.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="sheet-backdrop nutrition-edit-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="bottom-sheet nutrition-edit-sheet" role="dialog" aria-modal="true" aria-labelledby={`nutrition-edit-${entry.id}`}>
+        <div className="sheet-handle" />
+        <div className="sheet-head"><div><small>REDIGERA MATLOGG</small><h2 id={`nutrition-edit-${entry.id}`}>Måltid och råvaror</h2><p>Ändringarna sparas på samma loggpost och uppdaterar dagens totalsumma.</p></div><button type="button" onClick={onClose} aria-label="Stäng redigering"><X size={20} /></button></div>
+        <form className="nutrition-edit-form" onSubmit={(event) => void submitEdit(event)}>
+          <div className="nutrition-edit-main">
+            <label className="wide"><span>Namn på maträtt</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} /></label>
+            <label><span>Måltid</span><select value={meal} onChange={(event) => setMeal(event.target.value)}><option>Frukost</option><option>Lunch</option><option>Middag</option><option>Mellanmål</option></select></label>
+            <label><span>Datum</span><input type="date" value={loggedDate} max={todayKey} onChange={(event) => setLoggedDate(event.target.value)} /></label>
+            <label><span>Kalorier</span><div><input type="number" inputMode="numeric" min="0" step="1" value={calories} onChange={(event) => setCalories(event.target.value)} /><i>kcal</i></div></label>
+            <label><span>Protein</span><div><input type="number" inputMode="decimal" min="0" step="0.1" value={protein} onChange={(event) => setProtein(event.target.value)} /><i>g</i></div></label>
+            <label className="wide"><span>Anteckning</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Valfri anteckning om måltiden" /></label>
+          </div>
+
+          <div className="nutrition-ingredient-heading"><div><small>RÅVAROR</small><strong>{items.length ? `${items.length} ${items.length === 1 ? "råvara" : "råvaror"}` : "Inga råvarurader ännu"}</strong></div><button type="button" onClick={addItem}><Plus size={15} /> Lägg till råvara</button></div>
+          {items.length > 0 && <p className="nutrition-ingredient-note">När du ändrar kcal eller protein på en råvara räknas måltidens totalsumma om automatiskt.</p>}
+          <div className="nutrition-ingredient-list">
+            {items.map((item, index) => (
+              <fieldset className="nutrition-ingredient-row" key={item.editorId}>
+                <legend>Råvara {index + 1}</legend>
+                <label className="wide"><span>Namn</span><input value={item.name} onChange={(event) => updateItem(item.editorId, { name: event.target.value })} placeholder="Till exempel vaniljkvarg" /></label>
+                <label><span>Mängd</span><input type="number" inputMode="decimal" min="0" step="0.1" value={item.quantityText} onChange={(event) => updateItem(item.editorId, { quantityText: event.target.value })} /></label>
+                <label><span>Enhet</span><select value={item.unitValue} onChange={(event) => updateItem(item.editorId, { unitValue: event.target.value })}><option value="g">gram (g)</option><option value="kg">kilogram (kg)</option><option value="dl">deciliter (dl)</option><option value="ml">milliliter (ml)</option><option value="st">styck</option><option value="portion">portion</option><option value="msk">matsked (msk)</option><option value="tsk">tesked (tsk)</option></select></label>
+                <label><span>Kalorier</span><div><input type="number" inputMode="decimal" min="0" step="0.1" value={item.calories} onChange={(event) => updateItem(item.editorId, { calories: Math.max(0, Number(event.target.value) || 0) })} /><i>kcal</i></div></label>
+                <label><span>Protein</span><div><input type="number" inputMode="decimal" min="0" step="0.1" value={item.protein} onChange={(event) => updateItem(item.editorId, { protein: Math.max(0, Number(event.target.value) || 0) })} /><i>g</i></div></label>
+                <button className="nutrition-ingredient-delete" type="button" onClick={() => applyItems(items.filter((current) => current.editorId !== item.editorId))} aria-label={`Ta bort ${item.name || `råvara ${index + 1}`}`}><Trash2 size={15} /> Ta bort råvara</button>
+              </fieldset>
+            ))}
+          </div>
+
+          {error && <div className="nutrition-notice error"><CircleAlert size={16} />{error}</div>}
+          <button className="primary-action" type="submit" disabled={saving || !name.trim()}>{saving ? <LoaderCircle className="spin" size={18} /> : <Check size={18} />} {saving ? "Sparar ändringar …" : "Spara ändringar"}</button>
+        </form>
+      </section>
+    </div>
   );
 }
 

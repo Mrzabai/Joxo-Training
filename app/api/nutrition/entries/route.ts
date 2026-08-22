@@ -32,12 +32,16 @@ export async function GET(request: Request) {
   const owner = ownerFrom(request);
   if (!owner) return Response.json({ entries: [], error: "Enheten kunde inte identifieras." }, { status: 401 });
   try {
+    const requestedLimit = Number(new URL(request.url).searchParams.get("limit"));
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(5000, Math.floor(requestedLimit))
+      : 5000;
     const rows = await getDb()
       .select()
       .from(nutritionEntries)
       .where(eq(nutritionEntries.owner, owner))
       .orderBy(desc(nutritionEntries.loggedAt))
-      .limit(500);
+      .limit(limit);
 
     return Response.json({
       entries: rows.map((row) => ({
@@ -60,22 +64,33 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
-  const owner = ownerFrom(request);
-  if (!owner) return Response.json({ error: "Enheten kunde inte identifieras." }, { status: 401 });
+class EntryInputError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+async function normalizedEntry(request: Request, owner: string) {
+  const raw = await request.text();
+  if (raw.length > 30_000) throw new EntryInputError("Måltiden innehåller för mycket data.", 413);
+
+  let payload: Record<string, unknown>;
   try {
-    const raw = await request.text();
-    if (raw.length > 30_000) return Response.json({ error: "Måltiden innehåller för mycket data." }, { status: 413 });
+    payload = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new EntryInputError("Måltidsdatan är ogiltig.", 400);
+  }
 
-    const payload = JSON.parse(raw) as Record<string, unknown>;
-    const id = cleanText(payload.id, 80) || crypto.randomUUID();
-    const name = cleanText(payload.name, 160);
-    const mealType = cleanText(payload.meal, 40) || "Mellanmål";
-    const loggedAt = cleanText(payload.loggedAt, 40) || new Date().toISOString();
-    if (!name) return Response.json({ error: "Måltiden behöver ett namn." }, { status: 400 });
-    if (Number.isNaN(Date.parse(loggedAt))) return Response.json({ error: "Ogiltigt datum." }, { status: 400 });
+  const id = cleanText(payload.id, 80) || crypto.randomUUID();
+  const name = cleanText(payload.name, 160);
+  const mealType = cleanText(payload.meal, 40) || "Mellanmål";
+  const loggedAt = cleanText(payload.loggedAt, 40) || new Date().toISOString();
+  if (!name) throw new EntryInputError("Måltiden behöver ett namn.", 400);
+  if (Number.isNaN(Date.parse(loggedAt))) throw new EntryInputError("Ogiltigt datum.", 400);
 
-    const entry = {
+  return {
+    payload,
+    entry: {
       id,
       owner,
       loggedAt,
@@ -90,29 +105,64 @@ export async function POST(request: Request) {
       imageType: cleanText(payload.imageType, 80) || null,
       detailsJson: JSON.stringify(payload.details ?? {}).slice(0, 12_000),
       updatedAt: new Date().toISOString(),
-    };
+    },
+  };
+}
+
+function mutableEntryFields(entry: Awaited<ReturnType<typeof normalizedEntry>>["entry"]) {
+  return {
+    loggedAt: entry.loggedAt,
+    mealType: entry.mealType,
+    name: entry.name,
+    description: entry.description,
+    calories: entry.calories,
+    protein: entry.protein,
+    source: entry.source,
+    confidence: entry.confidence,
+    imageKey: entry.imageKey,
+    imageType: entry.imageType,
+    detailsJson: entry.detailsJson,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+function saveErrorResponse(error: unknown) {
+  if (error instanceof EntryInputError) return Response.json({ error: error.message }, { status: error.status });
+  return Response.json({ error: errorMessage(error) }, { status: 503 });
+}
+
+export async function POST(request: Request) {
+  const owner = ownerFrom(request);
+  if (!owner) return Response.json({ error: "Enheten kunde inte identifieras." }, { status: 401 });
+  try {
+    const { payload, entry } = await normalizedEntry(request, owner);
 
     await getDb().insert(nutritionEntries).values(entry).onConflictDoUpdate({
       target: nutritionEntries.id,
-      set: {
-        loggedAt: entry.loggedAt,
-        mealType: entry.mealType,
-        name: entry.name,
-        description: entry.description,
-        calories: entry.calories,
-        protein: entry.protein,
-        source: entry.source,
-        confidence: entry.confidence,
-        imageKey: entry.imageKey,
-        imageType: entry.imageType,
-        detailsJson: entry.detailsJson,
-        updatedAt: entry.updatedAt,
-      },
+      set: mutableEntryFields(entry),
     });
 
     return Response.json({ saved: true, entry: { ...payload, ...entry, meal: entry.mealType } });
   } catch (error) {
-    return Response.json({ error: errorMessage(error) }, { status: 503 });
+    return saveErrorResponse(error);
+  }
+}
+
+export async function PUT(request: Request) {
+  const owner = ownerFrom(request);
+  if (!owner) return Response.json({ error: "Enheten kunde inte identifieras." }, { status: 401 });
+  try {
+    const { payload, entry } = await normalizedEntry(request, owner);
+    const updated = await getDb()
+      .update(nutritionEntries)
+      .set(mutableEntryFields(entry))
+      .where(and(eq(nutritionEntries.id, entry.id), eq(nutritionEntries.owner, owner)))
+      .returning({ id: nutritionEntries.id });
+
+    if (!updated.length) return Response.json({ error: "Måltiden finns inte längre i matloggen." }, { status: 404 });
+    return Response.json({ saved: true, entry: { ...payload, ...entry, meal: entry.mealType } });
+  } catch (error) {
+    return saveErrorResponse(error);
   }
 }
 

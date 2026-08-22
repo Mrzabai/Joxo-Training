@@ -13,6 +13,8 @@ En mobil träningsapp för Jocke med ett personligt fyrdagarsschema, aktiv setlo
 - Kalori-, protein- och vattenlogg
 - Tålig lokal sökning i 2 606 svenska baslivsmedel och 38 kurerade träningsfavoriter
 - Separata mängd- och enhetsval för gram, kilo, deciliter, milliliter, styck, portion, matsked och tesked
+- Redigering av sparade maträtter, datum, makron och enskilda råvarurader
+- Beständig dagshistorik med kalorier, protein och jämförelse mellan valfria loggade dagar
 - Måltidsbilder som sparas privat tillsammans med loggen
 - Installerbar PWA för mobil
 
