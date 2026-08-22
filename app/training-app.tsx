@@ -319,6 +319,23 @@ function shiftDate(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
+function shiftMonth(month: string, months: number) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const value = new Date(Date.UTC(year, monthNumber - 1 + months, 1, 12));
+  return value.toISOString().slice(0, 7);
+}
+
+function calendarDates(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const firstWeekday = new Date(Date.UTC(year, monthNumber - 1, 1, 12)).getUTCDay();
+  const leadingDays = (firstWeekday + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
+  return [
+    ...Array.from({ length: leadingDays }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`),
+  ];
+}
+
 function nutritionDaySummaries(entries: FoodEntry[], fallback: string): NutritionDaySummary[] {
   const summaries = new Map<string, NutritionDaySummary>();
   entries.forEach((entry) => {
@@ -345,6 +362,68 @@ function nutritionDateLabel(date: string, todayKey: string, long = false) {
 function nutritionDifference(value: number, unit: string) {
   const rounded = Math.round(value * 10) / 10;
   return `${rounded > 0 ? "+" : ""}${formatNumber(rounded)} ${unit}`;
+}
+
+function NutritionCalendar({
+  month,
+  selectedDate,
+  todayKey,
+  savedDays,
+  onMonthChange,
+  onSelect,
+  onClose,
+}: {
+  month: string;
+  selectedDate: string;
+  todayKey: string;
+  savedDays: NutritionDaySummary[];
+  onMonthChange: (month: string) => void;
+  onSelect: (date: string) => void;
+  onClose: () => void;
+}) {
+  const monthDates = calendarDates(month);
+  const savedByDate = new Map(savedDays.map((day) => [day.date, day]));
+  const monthLabel = new Intl.DateTimeFormat("sv-SE", { month: "long", year: "numeric" })
+    .format(new Date(`${month}-01T12:00:00.000Z`));
+
+  return (
+    <div className="nutrition-calendar" role="dialog" aria-modal="false" aria-label="Välj en dag för matloggen">
+      <div className="nutrition-calendar-head">
+        <button type="button" onClick={() => onMonthChange(shiftMonth(month, -1))} aria-label="Föregående månad"><ChevronLeft size={17} /></button>
+        <strong>{monthLabel}</strong>
+        <button type="button" disabled={month >= todayKey.slice(0, 7)} onClick={() => onMonthChange(shiftMonth(month, 1))} aria-label="Nästa månad"><ChevronRight size={17} /></button>
+      </div>
+      <div className="nutrition-calendar-weekdays" aria-hidden="true">
+        {weekdayLabels.map((weekday, index) => <span key={`${weekday}-${index}`}>{weekday}</span>)}
+      </div>
+      <div className="nutrition-calendar-grid">
+        {monthDates.map((date, index) => {
+          if (!date) return <span className="empty" key={`empty-${index}`} />;
+          const summary = savedByDate.get(date);
+          const isFuture = date > todayKey;
+          const isSelected = date === selectedDate;
+          return (
+            <button
+              className={`${summary ? "has-log " : ""}${isSelected ? "active" : ""}`.trim()}
+              type="button"
+              key={date}
+              disabled={isFuture}
+              aria-label={`${nutritionDateLabel(date, todayKey, true)}${summary ? `, ${summary.entryCount} loggade ${summary.entryCount === 1 ? "måltid" : "måltider"}` : ", ingen mat loggad"}`}
+              aria-pressed={isSelected}
+              onClick={() => onSelect(date)}
+            >
+              <span>{Number(date.slice(-2))}</span>
+              {summary && <i aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="nutrition-calendar-footer">
+        <span><i /> Dagar med sparade loggar</span>
+        <div><button type="button" onClick={() => onSelect(todayKey)}>Idag</button><button type="button" onClick={onClose}>Stäng</button></div>
+      </div>
+    </div>
+  );
 }
 
 function parseBulkMacroText(value: string): BulkMacroParseResult {
@@ -1359,6 +1438,8 @@ function NutritionView({
   const [visibleHistoryDays, setVisibleHistoryDays] = useState(14);
   const [compareDateA, setCompareDateA] = useState(todayKey);
   const [compareDateB, setCompareDateB] = useState(shiftDate(todayKey, -1));
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(todayKey.slice(0, 7));
   const [bulkMacroOpen, setBulkMacroOpen] = useState(false);
   const [bulkMacroText, setBulkMacroText] = useState("");
   const [bulkIgnoredLines, setBulkIgnoredLines] = useState<string[]>([]);
@@ -1581,14 +1662,24 @@ function NutritionView({
 
       <section className="nutrition-dashboard card-surface">
         <div className="nutrition-date-row">
-          <button type="button" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} aria-label="Föregående dag"><ChevronLeft size={18} /></button>
-          <label>
+          <button className="nutrition-date-nav" type="button" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} aria-label="Föregående dag"><ChevronLeft size={18} /></button>
+          <button className="nutrition-date-trigger" type="button" aria-expanded={calendarOpen} onClick={() => { setCalendarMonth(selectedDate.slice(0, 7)); setCalendarOpen((current) => !current); }} aria-label="Öppna kalender">
             <small>{selectedDate === todayKey ? "IDAG" : "VALD DAG"}</small>
-            <strong>{dateLabel}</strong>
-            <input type="date" value={selectedDate} max={todayKey} onChange={(event) => setSelectedDate(event.target.value || todayKey)} aria-label="Välj datum" />
-          </label>
-          <button type="button" disabled={selectedDate >= todayKey} onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Nästa dag"><ChevronRight size={18} /></button>
+            <strong>{dateLabel}<CalendarDays size={16} /></strong>
+          </button>
+          <button className="nutrition-date-nav" type="button" disabled={selectedDate >= todayKey} onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Nästa dag"><ChevronRight size={18} /></button>
         </div>
+        {calendarOpen && (
+          <NutritionCalendar
+            month={calendarMonth}
+            selectedDate={selectedDate}
+            todayKey={todayKey}
+            savedDays={savedDays}
+            onMonthChange={setCalendarMonth}
+            onSelect={(date) => { setSelectedDate(date); setCalendarMonth(date.slice(0, 7)); setCalendarOpen(false); }}
+            onClose={() => setCalendarOpen(false)}
+          />
+        )}
         <div className="nutrition-hero-metrics">
           <div className="nutrition-goal"><ProgressRing value={caloriePct} label="energi" main={`${totals.calories} kcal`} sub={`/ ${nutrition.calorieTarget} kcal`} /><p>{Math.max(0, nutrition.calorieTarget - totals.calories)} kcal kvar</p></div>
           <div className="nutrition-goal"><ProgressRing value={proteinPct} label="protein" main={`${formatNumber(totals.protein)} g`} sub={`/ ${nutrition.proteinTarget} g`} /><p>{formatNumber(Math.max(0, nutrition.proteinTarget - totals.protein))} g kvar</p></div>

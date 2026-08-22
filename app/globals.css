@@ -2876,7 +2876,7 @@ select:focus-visible {
   border-bottom: 1px solid var(--line);
 }
 
-.nutrition-date-row > button {
+.nutrition-date-nav {
   display: grid;
   width: 42px;
   height: 42px;
@@ -2888,38 +2888,144 @@ select:focus-visible {
   cursor: pointer;
 }
 
-.nutrition-date-row > button:disabled {
+.nutrition-date-nav:disabled {
   opacity: 0.32;
   cursor: default;
 }
 
-.nutrition-date-row label {
-  position: relative;
+.nutrition-date-trigger {
   display: flex;
+  padding: 4px 10px;
   min-width: 0;
   flex-direction: column;
   align-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
 }
 
-.nutrition-date-row label small {
+.nutrition-date-trigger:hover,
+.nutrition-date-trigger[aria-expanded="true"] { background: var(--accent-soft); }
+
+.nutrition-date-trigger small {
   color: var(--accent);
   font-size: 8px;
   font-weight: 850;
   letter-spacing: 0.14em;
 }
 
-.nutrition-date-row label strong {
+.nutrition-date-trigger strong {
+  display: flex;
   margin-top: 4px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   font-size: 15px;
   text-transform: capitalize;
 }
 
-.nutrition-date-row input {
+.nutrition-date-trigger strong svg { color: var(--accent); }
+
+.nutrition-calendar {
+  width: min(100%, 520px);
+  margin: 12px auto 0;
+  padding: 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--surface-2);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .18);
+}
+
+.nutrition-calendar-head {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.nutrition-calendar-head > strong { text-align: center; font-size: 13px; text-transform: capitalize; }
+.nutrition-calendar-head > button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.nutrition-calendar-head > button:disabled { opacity: .3; cursor: default; }
+
+.nutrition-calendar-weekdays,
+.nutrition-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.nutrition-calendar-weekdays { margin-top: 12px; }
+.nutrition-calendar-weekdays span {
+  padding: 4px 0;
+  color: var(--muted-2);
+  font-size: 7px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.nutrition-calendar-grid > button,
+.nutrition-calendar-grid > .empty { height: clamp(34px, 9vw, 44px); }
+.nutrition-calendar-grid > button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.nutrition-calendar-grid > button:hover { border-color: var(--line-strong); background: var(--surface); }
+.nutrition-calendar-grid > button.has-log { border-color: rgba(199, 255, 50, .28); background: var(--accent-soft); font-weight: 850; }
+.nutrition-calendar-grid > button.active { border-color: var(--accent); background: var(--accent); color: #10140a; font-weight: 900; }
+.nutrition-calendar-grid > button:disabled { opacity: .22; cursor: default; }
+.nutrition-calendar-grid > button i {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  opacity: 0;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.nutrition-calendar-grid > button.active i { background: #10140a; }
+
+.nutrition-calendar-footer {
+  display: flex;
+  margin-top: 10px;
+  padding-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+.nutrition-calendar-footer > span { display: flex; align-items: center; gap: 5px; color: var(--muted-2); font-size: 7px; }
+.nutrition-calendar-footer > span i { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
+.nutrition-calendar-footer > div { display: flex; gap: 6px; }
+.nutrition-calendar-footer button {
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 8px;
+  font-weight: 800;
   cursor: pointer;
 }
 
