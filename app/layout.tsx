@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { APP_ICON_DATA_URL, APP_INSTALL_VERSION } from "./lib/app-icon";
+import { APP_ICON_DATA_URL, APP_INSTALL_VERSION, APPLE_TOUCH_ICON_PATH } from "./lib/app-icon";
 
 const productionUrl = process.env.NEXT_PUBLIC_SITE_URL
   ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null)
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
       { url: "/joxo-app-icon-512-20260821.png", sizes: "512x512", type: "image/png" },
     ],
     shortcut: "/joxo-favicon-20260821.ico",
-    apple: [{ url: APP_ICON_DATA_URL, sizes: "any", type: "image/svg+xml" }],
+    apple: [{ url: APPLE_TOUCH_ICON_PATH, sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
     title: "Joxo Training",
@@ -59,7 +59,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Joxo Training" />
         <link rel="manifest" href={`/${APP_INSTALL_VERSION}.webmanifest`} />
         <link rel="icon" type="image/svg+xml" sizes="any" href={APP_ICON_DATA_URL} />
-        <link rel="apple-touch-icon-precomposed" sizes="any" href={APP_ICON_DATA_URL} />
+        <link rel="apple-touch-icon-precomposed" sizes="180x180" href={APPLE_TOUCH_ICON_PATH} />
       </head>
       <body>{children}</body>
     </html>

@@ -255,7 +255,10 @@ test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   assert.ok(encodedIcon, "The private iPhone install needs an inline icon");
   assert.match(Buffer.from(encodedIcon, "base64").toString("utf8"), /stroke="#c7ff32"/);
   assert.match(layout, /APP_ICON_DATA_URL/);
+  assert.match(layout, /APPLE_TOUCH_ICON_PATH/);
   assert.match(layout, /apple-touch-icon-precomposed/);
+  assert.match(layout, /sizes="180x180" href={APPLE_TOUCH_ICON_PATH}/);
+  assert.match(iconSource, /joxo-app-icon-180-20260821\.png\?rev=joxo-v9/);
   assert.match(layout, /APP_INSTALL_VERSION}\.webmanifest/);
   assert.match(manifest, /id:\s*`\/\$\{APP_INSTALL_VERSION\}`/);
   assert.match(manifest, /start_url:\s*`\/\?install=\$\{APP_INSTALL_VERSION\}`/);
