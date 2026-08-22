@@ -232,6 +232,9 @@ test("supports editing meals and ingredients with durable daily history comparis
   assert.match(trainingApp, /method: isExisting \? "PUT" : "POST"/);
   assert.match(trainingApp, /details: \{ \.\.\.entry\.details, items: storedItems \}/);
   assert.match(trainingApp, /SPARADE DAGAR/);
+  assert.match(trainingApp, /function NutritionCalendar/);
+  assert.match(trainingApp, /Öppna kalender/);
+  assert.match(trainingApp, /Dagar med sparade loggar/);
   assert.match(trainingApp, /Jämför dagar/);
   assert.match(trainingApp, /nutritionDaySummaries/);
   assert.match(trainingApp, /nutrition\/entries\?limit=5000/);
@@ -239,6 +242,7 @@ test("supports editing meals and ingredients with durable daily history comparis
   assert.match(entryRoute, /Math\.min\(5000/);
   assert.match(entryRoute, /eq\(nutritionEntries\.id, entry\.id\).*eq\(nutritionEntries\.owner, owner\)/s);
   assert.match(styles, /\.nutrition-comparison/);
+  assert.match(styles, /\.nutrition-calendar-grid/);
   assert.match(styles, /\.nutrition-edit-sheet/);
   assert.match(styles, /\.meal-edit/);
 });
