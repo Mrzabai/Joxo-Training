@@ -3101,6 +3101,61 @@ select:focus-visible {
   text-decoration: none;
 }
 
+.bulk-macro-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(199, 255, 50, .22);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bulk-macro-toggle > span { display: flex; min-width: 0; align-items: center; gap: 9px; text-align: left; }
+.bulk-macro-toggle > span > svg { flex: 0 0 auto; color: var(--accent); }
+.bulk-macro-toggle > span > span { display: flex; min-width: 0; flex-direction: column; }
+.bulk-macro-toggle strong { font-size: 10px; }
+.bulk-macro-toggle small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.bulk-macro-toggle > svg { flex: 0 0 auto; color: var(--accent); transition: transform 180ms ease; }
+.bulk-macro-toggle.active > svg { transform: rotate(180deg); }
+
+.bulk-macro-panel {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-2);
+}
+
+.bulk-macro-panel label { display: flex; flex-direction: column; gap: 6px; }
+.bulk-macro-panel label > span { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.bulk-macro-panel textarea {
+  width: 100%;
+  min-height: 126px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.55;
+  outline: 0;
+  resize: vertical;
+}
+.bulk-macro-panel textarea:focus { border-color: var(--accent); }
+.bulk-macro-panel textarea::placeholder { color: var(--muted-2); }
+.bulk-macro-panel > p { margin: 7px 0 0; color: var(--muted-2); font-size: 8px; line-height: 1.45; }
+.bulk-macro-panel > .primary-action { margin-top: 10px; }
+.bulk-macro-warning { display: flex; margin-top: 8px; align-items: center; gap: 7px; color: var(--danger); font-size: 8px; }
+.bulk-macro-warning svg { flex: 0 0 auto; }
+
 .composer-controls {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto auto;

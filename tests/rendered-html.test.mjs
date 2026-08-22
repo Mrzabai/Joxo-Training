@@ -243,6 +243,19 @@ test("supports editing meals and ingredients with durable daily history comparis
   assert.match(styles, /\.meal-edit/);
 });
 
+test("parses and logs several pasted macro rows as one editable meal", async () => {
+  const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(trainingApp, /function parseBulkMacroText/);
+  assert.match(trainingApp, /Klistra in flera makron/);
+  assert.match(trainingApp, /Läs in och summera/);
+  assert.match(trainingApp, /Kcal och protein är hämtade direkt från de inklistrade värdena/);
+  assert.match(trainingApp, /proteinMatch/);
+  assert.match(styles, /\.bulk-macro-panel/);
+  assert.match(styles, /\.bulk-macro-toggle/);
+});
+
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
   const icons = [
     ["../public/apple-touch-icon.png", 180],

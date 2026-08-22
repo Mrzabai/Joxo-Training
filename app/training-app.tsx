@@ -166,6 +166,11 @@ type EditableNutritionItem = NutritionItem & {
   unitValue: string;
 };
 
+type BulkMacroParseResult = {
+  items: NutritionItem[];
+  ignoredLines: string[];
+};
+
 const QUICK_FOODS = ["Vaniljkvarg", "Lågkalori hallonsylt", "Kycklingfilé", "Havregryn", "Ägg", "KESO", "Wasa Protein+", "ProPud", "Barebells"];
 
 type PersistedState = {
@@ -340,6 +345,54 @@ function nutritionDateLabel(date: string, todayKey: string, long = false) {
 function nutritionDifference(value: number, unit: string) {
   const rounded = Math.round(value * 10) / 10;
   return `${rounded > 0 ? "+" : ""}${formatNumber(rounded)} ${unit}`;
+}
+
+function parseBulkMacroText(value: string): BulkMacroParseResult {
+  const items: NutritionItem[] = [];
+  const ignoredLines: string[] = [];
+
+  value
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\*\*|__|`/g, "").replace(/^\s*[-–—•▪︎◦]+\s*/, "").trim())
+    .filter(Boolean)
+    .forEach((line, index) => {
+      const calorieMatch = line.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i);
+      const proteinMatch = line.match(/(\d+(?:[.,]\d+)?)\s*g(?:ram)?\s*(?:protein|prot\.?)(?:\b|$)/i);
+      if (!calorieMatch || !proteinMatch) {
+        ignoredLines.push(line);
+        return;
+      }
+
+      const macroStart = Math.min(calorieMatch.index ?? line.length, proteinMatch.index ?? line.length);
+      const itemLabel = line
+        .slice(0, macroStart)
+        .replace(/(?:\s*[:;,–—-]?\s*)?ca\.?\s*$/i, "")
+        .replace(/[\s:;,–—-]+$/g, "")
+        .trim();
+      const amountMatch = itemLabel.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|dl|ml|st(?:yck)?|portion(?:er)?|msk|tsk)\s+(.+)$/i);
+      const quantityText = amountMatch?.[1]?.replace(",", ".");
+      const quantity = quantityText ? Number(quantityText) : undefined;
+      const rawUnit = amountMatch?.[2]?.toLowerCase();
+      const unit = rawUnit?.startsWith("st") ? "st" : rawUnit?.startsWith("portion") ? "portion" : rawUnit;
+      const rawName = (amountMatch?.[3] ?? itemLabel ?? `Råvara ${index + 1}`).replace(/[\s:;,–—-]+$/g, "").trim();
+      const name = rawName ? `${rawName.charAt(0).toUpperCase()}${rawName.slice(1)}` : `Råvara ${index + 1}`;
+      const calories = Number(calorieMatch[1].replace(",", "."));
+      const protein = Number(proteinMatch[1].replace(",", "."));
+      const grams = quantity && unit === "g" ? quantity : quantity && unit === "kg" ? quantity * 1000 : undefined;
+
+      items.push({
+        name,
+        amount: quantity && unit ? `${quantityText} ${unit}` : "Angiven makromängd",
+        quantity,
+        unit,
+        grams,
+        calories: Math.max(0, Math.round(calories * 10) / 10),
+        protein: Math.max(0, Math.round(protein * 10) / 10),
+      });
+    });
+
+  return { items, ignoredLines };
 }
 
 function editableNutritionItem(item: NutritionItem, index: number): EditableNutritionItem {
@@ -1306,6 +1359,9 @@ function NutritionView({
   const [visibleHistoryDays, setVisibleHistoryDays] = useState(14);
   const [compareDateA, setCompareDateA] = useState(todayKey);
   const [compareDateB, setCompareDateB] = useState(shiftDate(todayKey, -1));
+  const [bulkMacroOpen, setBulkMacroOpen] = useState(false);
+  const [bulkMacroText, setBulkMacroText] = useState("");
+  const [bulkIgnoredLines, setBulkIgnoredLines] = useState<string[]>([]);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
@@ -1437,6 +1493,34 @@ function NutritionView({
     });
   }
 
+  function prepareBulkMacroEntry() {
+    const parsed = parseBulkMacroText(bulkMacroText);
+    setError("");
+    setSuccess("");
+    setBulkIgnoredLines(parsed.ignoredLines);
+    setMatchGroups([]);
+
+    if (!parsed.items.length) {
+      setEstimate(null);
+      setError("Jag kunde inte hitta både kcal och protein på någon rad. Prova formatet: 200 g lax: 400 kcal och 40 g protein.");
+      return;
+    }
+
+    const title = parsed.items.length <= 3
+      ? parsed.items.map((item) => item.name).join(" + ")
+      : `Måltid med ${parsed.items.length} råvaror`;
+    setDescription(parsed.items.map((item) => `${item.amount} ${item.name}`).join(", "));
+    setEstimateEngine("manual");
+    setEstimate({
+      title,
+      calories: Math.round(parsed.items.reduce((sum, item) => sum + item.calories, 0)),
+      protein: Math.round(parsed.items.reduce((sum, item) => sum + item.protein, 0) * 10) / 10,
+      confidence: "high",
+      assumptions: ["Kcal och protein är hämtade direkt från de inklistrade värdena."],
+      items: parsed.items,
+    });
+  }
+
   async function logEstimate() {
     if (!estimate?.title.trim()) return;
     setStatus("saving");
@@ -1459,6 +1543,9 @@ function NutritionView({
       setEstimate(null);
       setEstimateEngine("manual");
       setMatchGroups([]);
+      setBulkMacroText("");
+      setBulkIgnoredLines([]);
+      setBulkMacroOpen(false);
       clearImage();
       setSuccess("Måltiden är sparad och inräknad i dagens summa.");
     } catch (saveError) {
@@ -1511,7 +1598,7 @@ function NutritionView({
 
       <section className="nutrition-history card-surface">
         <div className="section-heading">
-          <div><span>SPARADE DAGAR</span><h3>{savedDays.length ? `${savedDays.length} loggade ${savedDays.length === 1 ? "dag" : "dagar"}` : "Historiken börjar här"}</h3></div>
+          <div><span>SPARADE DAGAR</span><h3>{savedDays.length ? savedDays.length === 1 ? "1 loggad dag" : `${savedDays.length} loggade dagar` : "Historiken börjar här"}</h3></div>
           <CalendarDays size={20} />
         </div>
         <p className="nutrition-history-intro">Varje måltid sparas på sitt datum. Öppna en dag för att se eller ändra loggen, och jämför sedan kalorier och protein mellan två dagar.</p>
@@ -1561,12 +1648,32 @@ function NutritionView({
       </section>
 
       <section className="meal-composer card-surface">
-        <div className="section-heading"><div><span>LOKAL MATDATABAS</span><h3>Vad åt du?</h3></div><Database size={20} /></div>
+        <div className="section-heading"><div><span>MATLOGG</span><h3>Vad åt du?</h3></div><Database size={20} /></div>
         <div className="food-database-status">
           <Database size={17} />
           <span><strong>2 644 livsmedel</strong><small>2 606 basvaror + 38 träningsfavoriter · utan externt API</small></span>
           <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Basdata</a>
         </div>
+        <button className={`bulk-macro-toggle${bulkMacroOpen ? " active" : ""}`} type="button" aria-expanded={bulkMacroOpen} onClick={() => { setBulkMacroOpen((current) => !current); setError(""); setSuccess(""); }}>
+          <span><Sparkles size={17} /><span><strong>Klistra in flera makron</strong><small>Flera råvaror med kcal och protein samtidigt</small></span></span>
+          <ChevronDown size={17} />
+        </button>
+        {bulkMacroOpen && (
+          <div className="bulk-macro-panel">
+            <label>
+              <span>Klistra in en rad per råvara</span>
+              <textarea
+                value={bulkMacroText}
+                onChange={(event) => { setBulkMacroText(event.target.value); setBulkIgnoredLines([]); setEstimate(null); setError(""); }}
+                placeholder={"120 g sötpotatis: 103 kcal och 1,9 g protein\n240 g laxrätt: 283 kcal och 25,8 g protein"}
+                autoFocus
+              />
+            </label>
+            <p>Fungerar även med fetstil, punktlistor, “ca” och svenska decimaler med kommatecken.</p>
+            {bulkIgnoredLines.length > 0 && <div className="bulk-macro-warning"><CircleAlert size={15} /><span>{bulkIgnoredLines.length} {bulkIgnoredLines.length === 1 ? "rad kunde" : "rader kunde"} inte läsas och kommer inte att loggas.</span></div>}
+            <button className="primary-action" type="button" disabled={status !== "idle" || !bulkMacroText.trim()} onClick={prepareBulkMacroEntry}><Check size={18} /> Läs in och summera</button>
+          </div>
+        )}
         <label className="food-search-field">
           <span>Livsmedel eller produkt</span>
           <input
