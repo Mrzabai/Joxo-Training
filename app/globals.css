@@ -3262,6 +3262,52 @@ select:focus-visible {
 .bulk-macro-warning { display: flex; margin-top: 8px; align-items: center; gap: 7px; color: var(--danger); font-size: 8px; }
 .bulk-macro-warning svg { flex: 0 0 auto; }
 
+.bulk-day-preview {
+  overflow: hidden;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.bulk-day-preview-head,
+.bulk-day-preview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+}
+
+.bulk-day-preview-head {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+}
+
+.bulk-day-preview-head strong { font-size: 9px; }
+.bulk-day-preview-head span { color: var(--muted); font-size: 7px; }
+.bulk-day-preview-row + .bulk-day-preview-row { border-top: 1px solid var(--line); }
+.bulk-day-preview-row > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.bulk-day-preview-row > span strong { overflow: hidden; font-size: 8px; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.bulk-day-preview-row > span small { color: var(--danger); font-size: 7px; }
+.bulk-day-preview-row > b { font-size: 8px; white-space: nowrap; }
+
+.bulk-day-existing-note {
+  display: flex;
+  margin-top: 8px;
+  padding: 9px 10px;
+  align-items: flex-start;
+  gap: 7px;
+  border-radius: 11px;
+  background: rgba(255, 185, 80, .09);
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+.bulk-day-existing-note svg { flex: 0 0 auto; color: #ffb950; }
+
 .composer-controls {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto auto;
@@ -3885,6 +3931,87 @@ html[data-theme="light"] .guide-section ul li,
 html[data-theme="light"] .guide-technique,
 html[data-theme="light"] .question-grid button,
 html[data-theme="light"] .coach-message p { color: var(--text); }
+
+html[data-theme="light"] .card-surface {
+  background: linear-gradient(145deg, #ffffff, #f4f7f0);
+  box-shadow: 0 14px 38px rgba(31, 43, 23, .09);
+}
+
+html[data-theme="light"] .workout-hero {
+  border-color: rgba(114, 153, 0, .22);
+  background:
+    radial-gradient(circle at 84% 13%, rgba(114, 153, 0, .16), transparent 34%),
+    linear-gradient(145deg, #ffffff 0%, #f4f8ed 58%, #eaf0e2 100%);
+  color: var(--text);
+}
+
+html[data-theme="light"] .hero-grid {
+  opacity: .08;
+  background-image: linear-gradient(rgba(24, 36, 19, .28) 1px, transparent 1px), linear-gradient(90deg, rgba(24, 36, 19, .28) 1px, transparent 1px);
+}
+
+html[data-theme="light"] .coach-card {
+  background: linear-gradient(135deg, rgba(51, 111, 208, .1), #ffffff 64%);
+}
+
+html[data-theme="light"] .plan-card,
+html[data-theme="light"] .exercise-card {
+  background: var(--surface);
+  box-shadow: 0 12px 34px rgba(31, 43, 23, .08);
+}
+
+html[data-theme="light"] .checkin-label,
+html[data-theme="light"] .muscle-list span { color: var(--text); }
+
+html[data-theme="light"] .score-pills button,
+html[data-theme="light"] .ring-item,
+html[data-theme="light"] .set-row,
+html[data-theme="light"] .guide-section,
+html[data-theme="light"] .food-form { background: var(--surface-2); }
+
+html[data-theme="light"] .readiness-orb,
+html[data-theme="light"] .mini-ring {
+  background-color: var(--line-strong);
+}
+
+html[data-theme="light"] .mini-ring::before { background: var(--surface); }
+html[data-theme="light"] .muscle-list i { background: var(--surface-3); }
+
+html[data-theme="light"] .baseline-card {
+  border-color: rgba(114, 153, 0, .2);
+  background: linear-gradient(135deg, var(--accent-soft), #ffffff 72%);
+  color: var(--text);
+}
+
+html[data-theme="light"] .profile-hero {
+  background: linear-gradient(135deg, #ffffff, #edf2e8);
+  color: var(--text);
+  box-shadow: 0 12px 34px rgba(31, 43, 23, .08);
+}
+
+html[data-theme="light"] .avatar,
+html[data-theme="light"] .large-avatar {
+  background: linear-gradient(145deg, #ffffff, var(--surface-3));
+  color: var(--text);
+}
+
+html[data-theme="light"] .rest-timer {
+  border-color: rgba(114, 153, 0, .24);
+  background: rgba(255, 255, 255, .96);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(31, 43, 23, .14);
+}
+
+html[data-theme="light"] .workout-progress,
+html[data-theme="light"] .rest-progress { background: var(--line-strong); }
+
+html[data-theme="light"] .summary-sheet {
+  background: linear-gradient(145deg, #ffffff, #edf2e7);
+  color: var(--text);
+  box-shadow: 0 28px 80px rgba(31, 43, 23, .2);
+}
+
+html[data-theme="light"] .sheet-handle { background: var(--line-strong); }
 
 @media (min-width: 720px) {
   .recipe-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

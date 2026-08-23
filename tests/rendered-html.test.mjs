@@ -146,6 +146,7 @@ test("has no active Notion integration, links, or settings", async () => {
 
 test("includes durable local food-database logging, recipes, photos, and theme switching", async () => {
   const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   const recipes = await readFile(new URL("../app/lib/recipes.ts", import.meta.url), "utf8");
   const analysisRoute = await readFile(new URL("../app/api/nutrition/analyze/route.ts", import.meta.url), "utf8");
   const foodDatabaseSource = await readFile(new URL("../app/lib/food-database.ts", import.meta.url), "utf8");
@@ -179,6 +180,10 @@ test("includes durable local food-database logging, recipes, photos, and theme s
   assert.match(trainingApp, /Sparas med loggen/);
   assert.match(trainingApp, /GRANSKA UPPSKATTNINGEN/);
   assert.match(trainingApp, /joxo-theme/);
+  assert.match(styles, /html\[data-theme="light"\] \.card-surface/);
+  assert.match(styles, /html\[data-theme="light"\] \.workout-hero/);
+  assert.match(styles, /html\[data-theme="light"\] \.plan-card/);
+  assert.match(styles, /html\[data-theme="light"\] \.profile-hero/);
   assert.match(analysisRoute, /analyzeFoodDescription/);
   assert.match(analysisRoute, /analyzeFoodSearch/);
   assert.match(analysisRoute, /form\.get\("amount"\)/);
@@ -258,6 +263,20 @@ test("parses and logs several pasted macro rows as one editable meal", async () 
   assert.match(trainingApp, /proteinMatch/);
   assert.match(styles, /\.bulk-macro-panel/);
   assert.match(styles, /\.bulk-macro-toggle/);
+});
+
+test("bulk logs Swedish daily calorie and protein summaries across dates", async () => {
+  const trainingApp = await readFile(new URL("../app/training-app.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(trainingApp, /function parseBulkDaySummary/);
+  assert.match(trainingApp, /Bulklogga flera dagar/);
+  assert.match(trainingApp, /Importerad dagssumma/);
+  assert.match(trainingApp, /bulk-day-summary-/);
+  assert.match(trainingApp, /tusentalsmellanslag/);
+  assert.match(trainingApp, /localizedNumber/);
+  assert.match(styles, /\.bulk-day-preview/);
+  assert.match(styles, /\.bulk-day-existing-note/);
 });
 
 test("includes opaque Joxo icons for iPhone and PWA installs", async () => {
