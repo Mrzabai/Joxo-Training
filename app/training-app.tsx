@@ -91,6 +91,7 @@ type FoodEntry = {
     recipeId?: string;
     amount?: number;
     unit?: string;
+    daySummary?: boolean;
   };
 };
 
@@ -168,6 +169,17 @@ type EditableNutritionItem = NutritionItem & {
 
 type BulkMacroParseResult = {
   items: NutritionItem[];
+  ignoredLines: string[];
+};
+
+type BulkDaySummaryRow = {
+  date: string;
+  calories: number;
+  protein: number;
+};
+
+type BulkDayParseResult = {
+  rows: BulkDaySummaryRow[];
   ignoredLines: string[];
 };
 
@@ -426,6 +438,89 @@ function NutritionCalendar({
   );
 }
 
+const SWEDISH_MONTHS: Record<string, number> = {
+  jan: 1, januari: 1,
+  feb: 2, februari: 2,
+  mar: 3, mars: 3,
+  apr: 4, april: 4,
+  maj: 5,
+  jun: 6, juni: 6,
+  jul: 7, juli: 7,
+  aug: 8, augusti: 8,
+  sep: 9, sept: 9, september: 9,
+  okt: 10, oktober: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
+function localizedNumber(value: string) {
+  const compact = value.replace(/[\s\u00a0\u202f]/g, "");
+  if (compact.includes(",")) return Number(compact.replace(/\./g, "").replace(",", "."));
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(compact)) return Number(compact.replace(/\./g, ""));
+  return Number(compact);
+}
+
+function validDateKey(year: number, month: number, day: number) {
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function parseBulkDaySummary(value: string, todayKey: string): BulkDayParseResult {
+  const parsedByDate = new Map<string, BulkDaySummaryRow>();
+  const ignoredLines: string[] = [];
+  const todayYear = Number(todayKey.slice(0, 4));
+  const monthNames = Object.keys(SWEDISH_MONTHS).sort((a, b) => b.length - a.length).join("|");
+
+  value.replace(/\r/g, "").split("\n").forEach((rawLine) => {
+    const line = rawLine
+      .replace(/\*\*|__|`/g, "")
+      .replace(/^\s*[-–—•▪︎◦]+\s*/, "")
+      .replace(/\|/g, " ")
+      .replace(/[\u00a0\u202f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!line || /^[-–—\s]+$/.test(line) || (/datum/i.test(line) && /(kalor|kcal|protein)/i.test(line))) return;
+
+    let date: string | null = null;
+    const isoDate = line.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+    const namedDate = line.match(new RegExp(`^(\\d{1,2})\\s+(${monthNames})\\.?(?:\\s*,?\\s*(\\d{4}))?`, "i"));
+    const numericDate = line.match(/^(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/);
+
+    if (isoDate) {
+      date = validDateKey(Number(isoDate[1]), Number(isoDate[2]), Number(isoDate[3]));
+    } else if (namedDate || numericDate) {
+      const day = Number((namedDate ?? numericDate)?.[1]);
+      const month = namedDate
+        ? SWEDISH_MONTHS[namedDate[2].toLocaleLowerCase("sv-SE").replace(/\.$/, "")]
+        : Number(numericDate?.[2]);
+      const suppliedYear = (namedDate ?? numericDate)?.[3];
+      let year = suppliedYear ? Number(suppliedYear) : todayYear;
+      if (year < 100) year += 2000;
+      date = validDateKey(year, month, day);
+      if (date && !suppliedYear && date > todayKey) date = validDateKey(year - 1, month, day);
+    }
+
+    const calorieMatch = line.match(/(\d[\d\s.,]*)\s*(?:kcal|kalorier?)\b/i);
+    const proteinMatch = line.match(/(\d[\d\s.,]*)\s*g(?:ram)?(?:\s*protein)?\b/i);
+    const calories = calorieMatch ? localizedNumber(calorieMatch[1]) : Number.NaN;
+    const protein = proteinMatch ? localizedNumber(proteinMatch[1]) : Number.NaN;
+
+    if (!date || date > todayKey || !Number.isFinite(calories) || !Number.isFinite(protein)) {
+      ignoredLines.push(line);
+      return;
+    }
+
+    parsedByDate.set(date, {
+      date,
+      calories: Math.max(0, Math.round(calories)),
+      protein: Math.max(0, Math.round(protein * 10) / 10),
+    });
+  });
+
+  return { rows: [...parsedByDate.values()].sort((a, b) => a.date.localeCompare(b.date)), ignoredLines };
+}
+
 function parseBulkMacroText(value: string): BulkMacroParseResult {
   const items: NutritionItem[] = [];
   const ignoredLines: string[] = [];
@@ -621,23 +716,30 @@ export default function TrainingApp({ todayLabel, greeting, nowIso }: { todayLab
 
     const isExisting = foodEntries.some((item) => item.id === entry.id);
     const requestBody = JSON.stringify(entry);
-    let response = await fetch("/api/nutrition/entries", {
-      method: isExisting ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: requestBody,
-    });
-    if (isExisting && response.status === 404) {
+    let response: Response | null = null;
+    try {
       response = await fetch("/api/nutrition/entries", {
-        method: "POST",
+        method: isExisting ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: requestBody,
       });
+      if (isExisting && response.status === 404) {
+        response = await fetch("/api/nutrition/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: requestBody,
+        });
+      }
+    } catch {
+      response = null;
     }
-    const body = (await response.json()) as { error?: string };
-    if (!response.ok) {
+
+    const body = response ? await response.json().catch(() => ({} as { error?: string })) : {};
+    if (response && !response.ok && response.status < 500) {
       if (uploadedImageKey) void fetch(`/api/nutrition/photo?key=${encodeURIComponent(uploadedImageKey)}`, { method: "DELETE" });
       throw new Error(body.error || "Måltiden kunde inte sparas.");
     }
+    if (!response?.ok) setSaveStatus("offline");
 
     setFoodEntries((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
     setState((current) => ({
@@ -1440,6 +1542,10 @@ function NutritionView({
   const [compareDateB, setCompareDateB] = useState(shiftDate(todayKey, -1));
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(todayKey.slice(0, 7));
+  const [bulkDayOpen, setBulkDayOpen] = useState(false);
+  const [bulkDayText, setBulkDayText] = useState("");
+  const [bulkDayRows, setBulkDayRows] = useState<BulkDaySummaryRow[]>([]);
+  const [bulkDayIgnoredLines, setBulkDayIgnoredLines] = useState<string[]>([]);
   const [bulkMacroOpen, setBulkMacroOpen] = useState(false);
   const [bulkMacroText, setBulkMacroText] = useState("");
   const [bulkIgnoredLines, setBulkIgnoredLines] = useState<string[]>([]);
@@ -1602,6 +1708,54 @@ function NutritionView({
     });
   }
 
+  function prepareBulkDayEntries() {
+    const parsed = parseBulkDaySummary(bulkDayText, todayKey);
+    setError("");
+    setSuccess("");
+    setBulkDayRows(parsed.rows);
+    setBulkDayIgnoredLines(parsed.ignoredLines);
+    if (!parsed.rows.length) setError("Jag kunde inte hitta rader med datum, kcal och protein. Prova formatet: 13 aug 500 kcal 40 g.");
+  }
+
+  async function logBulkDayEntries() {
+    if (!bulkDayRows.length) return;
+    setStatus("saving");
+    setError("");
+    setSuccess("");
+    let savedCount = 0;
+    try {
+      for (const row of bulkDayRows) {
+        await onSave({
+          id: `bulk-day-summary-${row.date}`,
+          name: "Importerad dagssumma",
+          meal: "Mellanmål",
+          calories: row.calories,
+          protein: row.protein,
+          loggedAt: `${row.date}T12:00:00.000Z`,
+          source: "manual",
+          confidence: "high",
+          description: `Dagssumma importerad för ${nutritionDateLabel(row.date, todayKey, true)}.`,
+          details: {
+            daySummary: true,
+            assumptions: ["Kalorier och protein är hämtade direkt från den inklistrade dagssammanfattningen."],
+          },
+        });
+        savedCount += 1;
+      }
+      const latestDate = bulkDayRows[bulkDayRows.length - 1].date;
+      setSelectedDate(latestDate);
+      setBulkDayText("");
+      setBulkDayRows([]);
+      setBulkDayIgnoredLines([]);
+      setBulkDayOpen(false);
+      setSuccess(`${savedCount} ${savedCount === 1 ? "dag är" : "dagar är"} bulkloggade. Kalendern och historiken är uppdaterade.`);
+    } catch (saveError) {
+      setError(`${savedCount} av ${bulkDayRows.length} dagar sparades. ${saveError instanceof Error ? saveError.message : "Resten kunde inte sparas."}`);
+    } finally {
+      setStatus("idle");
+    }
+  }
+
   async function logEstimate() {
     if (!estimate?.title.trim()) return;
     setStatus("saving");
@@ -1745,7 +1899,49 @@ function NutritionView({
           <span><strong>2 644 livsmedel</strong><small>2 606 basvaror + 38 träningsfavoriter · utan externt API</small></span>
           <a href="https://soknaringsinnehall.livsmedelsverket.se/" target="_blank" rel="noreferrer">Basdata</a>
         </div>
-        <button className={`bulk-macro-toggle${bulkMacroOpen ? " active" : ""}`} type="button" aria-expanded={bulkMacroOpen} onClick={() => { setBulkMacroOpen((current) => !current); setError(""); setSuccess(""); }}>
+        <button className={`bulk-macro-toggle${bulkDayOpen ? " active" : ""}`} type="button" aria-expanded={bulkDayOpen} onClick={() => { setBulkDayOpen((current) => !current); setBulkMacroOpen(false); setError(""); setSuccess(""); }}>
+          <span><CalendarDays size={17} /><span><strong>Bulklogga flera dagar</strong><small>Klistra in datum, kalorier och protein för flera dagar</small></span></span>
+          <ChevronDown size={17} />
+        </button>
+        {bulkDayOpen && (
+          <div className="bulk-macro-panel bulk-day-panel">
+            <label>
+              <span>Klistra in dagssammanfattningen</span>
+              <textarea
+                value={bulkDayText}
+                onChange={(event) => { setBulkDayText(event.target.value); setBulkDayRows([]); setBulkDayIgnoredLines([]); setError(""); }}
+                placeholder={"Datum    Kalorier    Protein\n13 aug   500 kcal    40 g\n14 aug   500 kcal    40 g\n22 aug, hittills   1 005 kcal    82,2 g"}
+                autoFocus
+              />
+            </label>
+            <p>Årtal som saknas tolkas som det senaste datumet. Rubriker, “hittills”, tusentalsmellanslag och svenska decimalkomman går bra.</p>
+            {bulkDayIgnoredLines.length > 0 && <div className="bulk-macro-warning"><CircleAlert size={15} /><span>{bulkDayIgnoredLines.length} {bulkDayIgnoredLines.length === 1 ? "rad kunde" : "rader kunde"} inte läsas och hoppas över.</span></div>}
+            {bulkDayRows.length === 0 ? (
+              <button className="primary-action" type="button" disabled={status !== "idle" || !bulkDayText.trim()} onClick={prepareBulkDayEntries}><Check size={18} /> Läs in dagar</button>
+            ) : (
+              <>
+                <div className="bulk-day-preview">
+                  <div className="bulk-day-preview-head"><strong>{bulkDayRows.length} {bulkDayRows.length === 1 ? "dag hittad" : "dagar hittade"}</strong><span>Kontrollera före sparning</span></div>
+                  {bulkDayRows.map((row) => {
+                    const otherEntries = entries.filter((entry) => entryDate(entry, todayKey) === row.date && entry.id !== `bulk-day-summary-${row.date}`);
+                    return (
+                      <div className="bulk-day-preview-row" key={row.date}>
+                        <span><strong>{nutritionDateLabel(row.date, todayKey, true)}</strong>{otherEntries.length > 0 && <small>{otherEntries.length} befintliga {otherEntries.length === 1 ? "logg" : "loggar"}</small>}</span>
+                        <b>{row.calories} kcal</b>
+                        <b>{formatNumber(row.protein)} g</b>
+                      </div>
+                    );
+                  })}
+                </div>
+                {bulkDayRows.some((row) => entries.some((entry) => entryDate(entry, todayKey) === row.date && entry.id !== `bulk-day-summary-${row.date}`)) && (
+                  <div className="bulk-day-existing-note"><Info size={15} /><span>Dagar med befintliga måltider behålls. Den importerade dagssumman läggs till, så kontrollera att totalsumman inte blir dubbel.</span></div>
+                )}
+                <button className="primary-action" type="button" disabled={status === "saving"} onClick={() => void logBulkDayEntries()}>{status === "saving" ? <LoaderCircle className="spin" size={18} /> : <CalendarDays size={18} />} {status === "saving" ? "Sparar dagar …" : `Bulklogga ${bulkDayRows.length} ${bulkDayRows.length === 1 ? "dag" : "dagar"}`}</button>
+              </>
+            )}
+          </div>
+        )}
+        <button className={`bulk-macro-toggle${bulkMacroOpen ? " active" : ""}`} type="button" aria-expanded={bulkMacroOpen} onClick={() => { setBulkMacroOpen((current) => !current); setBulkDayOpen(false); setError(""); setSuccess(""); }}>
           <span><Sparkles size={17} /><span><strong>Klistra in flera makron</strong><small>Flera råvaror med kcal och protein samtidigt</small></span></span>
           <ChevronDown size={17} />
         </button>
