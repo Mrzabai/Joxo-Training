@@ -13,7 +13,7 @@ const allowedTypes: Record<string, string> = {
 };
 
 function validKey(value: string | null): value is string {
-  return Boolean(value && /^nutrition\/[a-f0-9-]+\.(jpg|png|webp)$/.test(value));
+  return Boolean(value && /^(nutrition|progress)\/[a-f0-9-]+\.(jpg|png|webp)$/.test(value));
 }
 
 export async function POST(request: Request) {
@@ -23,11 +23,12 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const image = form.get("image");
+    const kind = form.get("kind") === "progress" ? "progress" : "nutrition";
     if (!(image instanceof File)) return Response.json({ error: "Ingen bild valdes." }, { status: 400 });
     if (!allowedTypes[image.type]) return Response.json({ error: "Använd JPEG, PNG eller WebP." }, { status: 415 });
     if (image.size > 2_500_000) return Response.json({ error: "Bilden blev för stor efter komprimering. Välj en mindre bild." }, { status: 413 });
 
-    const key = `nutrition/${crypto.randomUUID()}.${allowedTypes[image.type]}`;
+    const key = `${kind}/${crypto.randomUUID()}.${allowedTypes[image.type]}`;
     const dataBase64 = Buffer.from(await image.arrayBuffer()).toString("base64");
     await getDb().insert(nutritionPhotos).values({
       key,

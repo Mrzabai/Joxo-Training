@@ -17,9 +17,9 @@ function cookieValue(request: Request, name: string) {
 }
 
 export function ownerFrom(request: Request) {
-  const accountEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (accountEmail) return `account:${accountEmail}`;
-
   const token = request.headers.get("x-joxo-owner") ?? cookieValue(request, OWNER_COOKIE);
-  return token && TOKEN_PATTERN.test(token) ? `device:${token.toLowerCase()}` : null;
+  if (token && TOKEN_PATTERN.test(token)) return `device:${token.toLowerCase()}`;
+
+  const accountEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
+  return accountEmail ? `account:${accountEmail}` : null;
 }
